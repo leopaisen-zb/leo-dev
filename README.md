@@ -4,7 +4,7 @@
 
 <h1 align="center">Leo Dev</h1>
 <p align="center"><strong>One development entry. Work you can pick up and verify.</strong></p>
-<p align="center">Codex first · TypeScript + Node.js · Private project</p>
+<p align="center">Codex first · TypeScript + Node.js · MIT licensed</p>
 
 Leo Dev helps a coding agent carry an approved idea through design, implementation, checks, review and delivery. It reuses selected upstream methods and keeps task state, evidence and recovery in one local lifecycle controller.
 
@@ -40,7 +40,7 @@ npm run verify:packages
 npm run build:marketplace
 ```
 
-The repository is private; cloning requires access. `dist/codex/leo-dev` contains the portable skill, selected upstream resources and the compiled controller runtime. The generated local marketplace contains a copy of that complete package.
+`dist/codex/leo-dev` contains the portable skill, selected upstream resources and the compiled controller runtime. The generated local marketplace contains a copy of that complete package.
 
 Install the generated package using the documented commands in [the installation guide](docs/installation.md). Source compilation, package integrity and an actual new Codex session are separate checks; their recorded outcomes are in [release evidence](docs/release-evidence.md).
 
@@ -107,4 +107,4 @@ Contributors can use the [development guide](CONTRIBUTING.md). Private local his
 
 ## License and artwork
 
-Original project code is **UNLICENSED**. Included upstream resources retain their own licenses; see [NOTICE](NOTICE). The cute Shin-chan illustration is fan art for this private project, with no official affiliation or endorsement. Artwork details are in [assets](assets/README.md).
+Original project code and documentation are licensed under the **[MIT License](LICENSE)**. Included upstream resources retain their own licenses; see [NOTICE](NOTICE). The Shin-chan illustration is fan art, excluded from the MIT grant, with no official affiliation or endorsement. Third-party character and trademark rights remain with their respective holders. See [artwork details](assets/README.md).

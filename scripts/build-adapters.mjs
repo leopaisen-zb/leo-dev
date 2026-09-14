@@ -12,6 +12,8 @@ const logo = 'assets/shinchan-logo.png';
 const trustedPathAnchors = [root, tmpdir(), '/tmp', '/private/tmp'].map((path) => resolve(path)).sort((left, right) => right.length - left.length);
 export const portableFiles = ['SKILL.md', 'references/acceptance.md', 'references/autonomous-execution.md', 'references/codex-team.md', 'references/components.md', 'references/delivery.md', 'references/gates.md', 'references/lifecycle.md', 'references/review-protocol.md', 'references/upstream-methods.md', 'references/upstream/bmad-team-LICENSE.txt', ...upstreamPortableFiles];
 export const codexOnlyFiles = ['agents/openai.yaml'];
+export const releaseFiles = ['LICENSE', 'NOTICE'];
+export const codexReleaseFiles = ['assets/README.md'];
 export const adapters = [['codex', '.codex-plugin'], ['claude', '.claude-plugin'], ['cursor', '.cursor-plugin'], ['open-agent-plugin', '']];
 const fail = (message) => { throw new Error(message); };
 
@@ -68,11 +70,27 @@ export async function validatePortableSkill(source, { codexAgent = false } = {})
   await validateUpstreamResources(source);
   return files.sort();
 }
+export async function validateReleaseFiles(source = root) {
+  await assertNoSymlinkAncestors(source);
+  await assertNoSymlink(source);
+  for (const file of releaseFiles) {
+    const path = join(source, file);
+    await assertNoSymlinkAncestors(path);
+    await assertNoSymlink(path);
+    let stat;
+    try { stat = await lstat(path); } catch (error) { if (error.code === 'ENOENT') fail(`Missing release ${file}`); throw error; }
+    if (!stat.isFile()) fail(`Release ${file} must be a regular file`);
+  }
+  const assetNotice = join(source, codexReleaseFiles[0]);
+  await assertNoSymlinkAncestors(assetNotice);
+  await assertNoSymlink(assetNotice);
+  if (!(await lstat(assetNotice)).isFile()) fail('Codex asset notice must be a regular file');
+}
 export async function loadMetadata(path = join(root, 'package.yaml')) {
   const data = parse(await readFile(path, 'utf8'));
   const expected = ['name', 'version', 'private', 'license', 'description', 'author'];
   if (!data || typeof data !== 'object' || Array.isArray(data) || expected.some((key) => !(key in data)) || Object.keys(data).some((key) => !expected.includes(key))) fail('package.yaml metadata is invalid');
-  if (data.name !== 'leo-dev' || typeof data.version !== 'string' || data.private !== true || data.license !== 'UNLICENSED' || typeof data.description !== 'string' || !data.author || typeof data.author.name !== 'string' || Object.keys(data.author).length !== 1) fail('package.yaml metadata is invalid');
+  if (data.name !== 'leo-dev' || typeof data.version !== 'string' || data.private !== false || data.license !== 'MIT' || typeof data.description !== 'string' || !data.author || typeof data.author.name !== 'string' || Object.keys(data.author).length !== 1) fail('package.yaml metadata is invalid');
   return data;
 }
 function manifestFor(platform, metadata) {
@@ -105,6 +123,7 @@ export async function build({ output = join(root, 'dist') } = {}) {
   const metadata = await loadMetadata();
   const source = join(root, 'skills/develop');
   await validatePortableSkill(source, { codexAgent: true });
+  await validateReleaseFiles();
   await assertNoSymlinkAncestors(output);
   await assertNoSymlink(output, { allowMissing: true });
   await mkdir(output, { recursive: true });
@@ -117,12 +136,14 @@ export async function build({ output = join(root, 'dist') } = {}) {
       if (!under(staging, destination)) fail(`Adapter destination escape rejected: ${platform}`);
       await copyFiles(source, join(destination, 'skills/develop'), portableFiles);
       if (platform === 'codex') await copyFiles(source, join(destination, 'skills/develop'), codexOnlyFiles);
+      await copyFiles(root, destination, releaseFiles);
       await mkdir(join(destination, manifestDirectory), { recursive: true });
       await writeFile(join(destination, manifestDirectory, 'plugin.json'), `${JSON.stringify(manifestFor(platform, metadata), null, 2)}\n`);
       if (platform === 'codex') {
         await assertNoSymlink(join(root, logo));
         await mkdir(dirname(join(destination, logo)), { recursive: true });
         await cp(join(root, logo), join(destination, logo), { dereference: false, force: true });
+        await copyFiles(root, destination, codexReleaseFiles);
         await buildRuntime({ destination: join(destination, 'runtime') });
       }
     }

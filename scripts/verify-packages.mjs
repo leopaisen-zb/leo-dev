@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { adapters, assertNoSymlinkAncestors, codexOnlyFiles, loadMetadata, portableFiles, validatePortableSkill } from './build-adapters.mjs';
+import { adapters, assertNoSymlinkAncestors, codexOnlyFiles, codexReleaseFiles, loadMetadata, portableFiles, releaseFiles, validatePortableSkill, validateReleaseFiles } from './build-adapters.mjs';
 import { runtimeManifestName, verifyRuntime } from './package-runtime.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -38,8 +38,10 @@ function same(left, right) { return left.length === right.length && left.every((
 function validPath(value) { return typeof value === 'string' && !isAbsolute(value) && !value.includes('\\') && !/^(?:[A-Za-z]:[\\/]|[\\/]{1,2})/.test(value) && !/(?:^|\/)\.\.(?:\/|$)/.test(value); }
 export async function verify(dist = join(root, 'dist')) {
   const metadata = await loadMetadata();
+  await validateReleaseFiles();
   await assertNoSymlinkPath(dist);
   const expectedHashes = new Map(); for (const file of [...portableFiles, ...codexOnlyFiles]) expectedHashes.set(file, await hash(join(root, 'skills/develop', file)));
+  const expectedReleaseHashes = new Map(); for (const file of [...releaseFiles, ...codexReleaseFiles]) expectedReleaseHashes.set(file, await hash(join(root, file)));
   for (const [platform, manifestDirectory] of adapters) {
     const packageRoot = join(dist, platform, metadata.name); if (!confined(dist, packageRoot)) fail('Package path escape rejected');
     await assertNoSymlinkPath(dist, `${platform}/${metadata.name}`);
@@ -51,17 +53,19 @@ export async function verify(dist = join(root, 'dist')) {
     if (platform !== 'claude' && !validPath(manifest.skills)) fail(`${platform} manifest skills path escape rejected`);
     if (platform === 'codex' && (!manifest.interface || typeof manifest.interface !== 'object' || !same(Object.keys(manifest.interface).sort(), codexInterfaceKeys.slice().sort()))) fail('codex manifest interface fields are invalid');
     if (platform === 'codex' && (![manifest.interface.composerIcon, manifest.interface.logo].every((path) => path === `./${logo}` && validPath(path)))) fail('codex manifest artwork paths are invalid');
-    const expected = new Set([`${manifestDirectory ? `${manifestDirectory}/` : ''}plugin.json`, ...portableFiles.map((file) => `skills/develop/${file}`), ...(platform === 'codex' ? [...codexOnlyFiles.map((file) => `skills/develop/${file}`), logo] : [])]);
+    const expected = new Set([`${manifestDirectory ? `${manifestDirectory}/` : ''}plugin.json`, ...releaseFiles, ...portableFiles.map((file) => `skills/develop/${file}`), ...(platform === 'codex' ? [...codexOnlyFiles.map((file) => `skills/develop/${file}`), ...codexReleaseFiles, logo] : [])]);
     const packageFiles = await files(packageRoot);
     const expectedPackageFiles = platform === 'codex' ? packageFiles.filter((file) => !file.startsWith('runtime/')) : packageFiles;
     if (!same(expectedPackageFiles, [...expected].sort())) fail(`${platform} package has unknown or missing files`);
     if (platform === 'codex') {
       if (await hash(join(packageRoot, logo)) !== await hash(join(root, logo))) fail('codex artwork hash mismatch');
+      for (const file of codexReleaseFiles) if (await hash(join(packageRoot, file)) !== expectedReleaseHashes.get(file)) fail(`codex asset notice hash mismatch: ${file}`);
       if (!packageFiles.includes(`runtime/${runtimeManifestName}`)) fail('codex runtime manifest is missing');
       await verifyRuntime(join(packageRoot, 'runtime'));
     }
     await validatePortableSkill(join(packageRoot, 'skills/develop'), { codexAgent: platform === 'codex' });
     for (const file of [...portableFiles, ...(platform === 'codex' ? codexOnlyFiles : [])]) if (await hash(join(packageRoot, 'skills/develop', file)) !== expectedHashes.get(file)) fail(`Portable Skill hash mismatch: ${platform}/${file}`);
+    for (const file of releaseFiles) if (await hash(join(packageRoot, file)) !== expectedReleaseHashes.get(file)) fail(`Release ${file} hash mismatch: ${platform}/${file}`);
   }
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) { const index = process.argv.indexOf('--dist'); verify(outputPath(index === -1 ? undefined : process.argv[index + 1])).catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }); }

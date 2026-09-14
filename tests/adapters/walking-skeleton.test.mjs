@@ -70,12 +70,21 @@ test('builds deterministic three-client packages from package.yaml and physicall
     const manifest = JSON.parse(await readFile(join(root, manifestDirectory, 'plugin.json'), 'utf8'));
     assert.equal(manifest.name, 'leo-dev');
     assert.equal(manifest.version, '0.2.0');
-    assert.equal(manifest.license, 'UNLICENSED');
+    assert.equal(manifest.license, 'MIT');
+    for (const file of ['LICENSE', 'NOTICE']) {
+      assert.deepEqual(await readFile(join(root, file)), await readFile(join(repository, file)));
+      assert.equal(await digest(join(root, file)), await digest(join(second, platform, 'leo-dev', file)));
+    }
     for (const file of portableFiles) {
       assert.equal(await readFile(join(root, 'skills/develop', file), 'utf8'), await readFile(join(repository, 'skills/develop', file), 'utf8'));
       assert.equal(await digest(join(root, 'skills/develop', file)), await digest(join(second, platform, 'leo-dev/skills/develop', file)));
     }
   }
+
+  assert.deepEqual(
+    await readFile(join(first, 'codex/leo-dev/assets/README.md')),
+    await readFile(join(repository, 'assets/README.md')),
+  );
 
   const verification = spawnSync(process.execPath, ['scripts/verify-packages.mjs', '--dist', first], {
     cwd: repository,
@@ -189,14 +198,18 @@ test('rejects symlink escapes and unknown portable source files', async () => {
   await assert.rejects(() => validatePortableSkill(join(source, 'skills/develop')), /symlink|escape/i);
 });
 
-test('uses YAML metadata and keeps Codex-only agent material out of other portable cores', async () => {
+test('uses public MIT YAML metadata and keeps Codex-only agent material out of other portable cores', async () => {
   const { loadMetadata } = await import('../../scripts/build-adapters.mjs');
   const yaml = join(await temporaryDirectory('leo-dev-metadata-'), 'package.yaml');
-  await writeFile(yaml, 'name: leo-dev\nversion: "1.2.3"\nprivate: true\nlicense: UNLICENSED\ndescription: "quoted: metadata"\nauthor:\n  name: "Leo Example"\n');
+  await writeFile(yaml, 'name: leo-dev\nversion: "1.2.3"\nprivate: false\nlicense: MIT\ndescription: "quoted: metadata"\nauthor:\n  name: "Leo Example"\n');
   assert.deepEqual(await loadMetadata(yaml), {
-    name: 'leo-dev', version: '1.2.3', private: true, license: 'UNLICENSED',
+    name: 'leo-dev', version: '1.2.3', private: false, license: 'MIT',
     description: 'quoted: metadata', author: { name: 'Leo Example' },
   });
+  await writeFile(yaml, 'name: leo-dev\nversion: "1.2.3"\nprivate: true\nlicense: MIT\ndescription: "quoted: metadata"\nauthor:\n  name: "Leo Example"\n');
+  await assert.rejects(() => loadMetadata(yaml), /metadata/i);
+  await writeFile(yaml, 'name: leo-dev\nversion: "1.2.3"\nprivate: false\nlicense: Apache-2.0\ndescription: "quoted: metadata"\nauthor:\n  name: "Leo Example"\n');
+  await assert.rejects(() => loadMetadata(yaml), /metadata/i);
 
   const output = await temporaryDirectory('leo-dev-platform-core-');
   const built = spawnSync(process.execPath, ['scripts/build-adapters.mjs', '--out', output], { cwd: repository, encoding: 'utf8' });
@@ -213,6 +226,25 @@ test('uses YAML metadata and keeps Codex-only agent material out of other portab
   assert.equal(codex.interface.composerIcon, './assets/shinchan-logo.png');
   assert.equal(codex.interface.logo, './assets/shinchan-logo.png');
   await access(join(output, 'codex/leo-dev/assets/shinchan-logo.png'));
+  assert.deepEqual(await readFile(join(output, 'codex/leo-dev/assets/README.md')), await readFile(join(repository, 'assets/README.md')));
+});
+
+test('rejects missing or symlinked source license and notice files', async () => {
+  const { validateReleaseFiles } = await import('../../scripts/build-adapters.mjs');
+  const source = await temporaryDirectory('leo-dev-release-source-');
+  await writeFile(join(source, 'LICENSE'), 'MIT license bytes');
+  await assert.rejects(() => validateReleaseFiles(source), /missing|notice/i);
+
+  await writeFile(join(source, 'NOTICE'), 'notice bytes');
+  await rm(join(source, 'LICENSE'));
+  await symlink('/etc/hosts', join(source, 'LICENSE'));
+  await assert.rejects(() => validateReleaseFiles(source), /symlink|license/i);
+
+  await rm(join(source, 'LICENSE'));
+  await writeFile(join(source, 'LICENSE'), 'MIT license bytes');
+  await rm(join(source, 'NOTICE'));
+  await symlink('/etc/hosts', join(source, 'NOTICE'));
+  await assert.rejects(() => validateReleaseFiles(source), /symlink|notice/i);
 });
 
 test('generates a self-contained local Codex marketplace from the built package', async () => {
@@ -291,6 +323,20 @@ test('replaces owned adapter packages and verify rejects tampered package conten
   assert.equal(build().status, 0);
   await writeFile(join(codexRoot, 'skills/develop/references/acceptance.md'), 'tampered');
   await assert.rejects(() => verify(output), /hash|portable|inventory/i);
+
+  for (const platform of ['codex', 'claude', 'cursor', 'open-agent-plugin']) {
+    assert.equal(build().status, 0);
+    await writeFile(join(output, platform, 'leo-dev/LICENSE'), 'tampered license');
+    await assert.rejects(() => verify(output), /license|hash|inventory/i);
+
+    assert.equal(build().status, 0);
+    await rm(join(output, platform, 'leo-dev/NOTICE'));
+    await assert.rejects(() => verify(output), /notice|unknown|missing|inventory/i);
+  }
+
+  assert.equal(build().status, 0);
+  await writeFile(join(codexRoot, 'assets/README.md'), 'tampered artwork notice');
+  await assert.rejects(() => verify(output), /asset|hash|inventory/i);
 
   assert.equal(build().status, 0);
   await writeFile(join(codexRoot, 'skills/develop/references/upstream/spec-kit/LICENSE'), 'tampered upstream license');

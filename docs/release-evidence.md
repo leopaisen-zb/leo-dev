@@ -18,7 +18,7 @@ The recorded host is macOS on Apple Silicon, with Node.js 22.22.2 and Codex CLI 
 | Whole-change review | M1–M4 passed again under the revised implementation plan. M5 architecture, security, NFR and primary reviews passed in four distinct sessions; the public controller accepted the Full receipt and created release evidence. |
 | Release verifier and archive | A distinct local verifier passed all 10 HTTP tests on both the live source and the extracted 13-file artifact. The public controller accepted the verifier evidence, exact artifact manifest and retrospective and reached `archived`. |
 | English documentation and artwork | README, installation, contribution and comparison guides are present. The generated Shin-chan logo, workflow illustration and actual desktop/mobile screenshots were visually inspected. |
-| GitHub | The [repository](https://github.com/leopaisen-zb/leo-dev) is private. The included CI workflow checks each push; consult [GitHub Actions](https://github.com/leopaisen-zb/leo-dev/actions) for its per-commit result. Local checks above are separate from remote CI. |
+| GitHub | The [repository](https://github.com/leopaisen-zb/leo-dev) is public, with original code licensed under MIT. The included CI workflow checks each push; consult [GitHub Actions](https://github.com/leopaisen-zb/leo-dev/actions) for its per-commit result. Local checks above are separate from remote CI. |
 
 ## What the development exercise demonstrated
 
@@ -45,3 +45,7 @@ The release retains failed and interrupted runs. A recovery timing fixture was c
 Use [CONTRIBUTING](../CONTRIBUTING.md) for the configured checks, [installation](installation.md) for package and host discovery, and the [example guide](../examples/mochi-board/README.md) for its ten HTTP tests. Raw sessions, user histories and approval records are retained locally and excluded from this distribution. Published summaries do not substitute historical counts for current results.
 
 Codex is the first acceptance host. Other client adapters are packaging outputs; complete client acceptance has not been established for them. Native-mobile and AI/RAG verification are outside this example. A local verifier is not GitHub Actions. This exercise demonstrates the recorded workflow on one source/task/host configuration; it does not establish statistical reliability or a speed, cost or quality advantage over [the upstream methods](benchmarks.md).
+
+## Public licensing follow-up
+
+The owner approved public visibility and the MIT license on 2026-09-14, after the private release checks above. That follow-up changes licensing, documentation and package notices; it does not change controller or Mochi Board behavior. The 472-test result above belongs to the preceding implementation commit; consult GitHub Actions for each later commit. Upstream notices remain intact, and the Shin-chan fan-art asset is excluded from the MIT grant.

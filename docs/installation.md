@@ -1,6 +1,6 @@
 # Install in Codex
 
-Build from an authorized checkout of this private repository. Use Node.js 20 or newer and npm. The recorded release host and CI use macOS; the controller's network-deny Gate policy requires an enforceable host sandbox. A Linux or Windows source build alone does not establish that capability.
+Build from a checkout of the public repository. Use Node.js 20 or newer and npm. The recorded release host and CI use macOS; the controller's network-deny Gate policy requires an enforceable host sandbox. A Linux or Windows source build alone does not establish that capability.
 
 ```sh
 npm ci

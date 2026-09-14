@@ -24,5 +24,6 @@
     ],
     "composerIcon": "./assets/shinchan-logo.png",
     "logo": "./assets/shinchan-logo.png"
-  }
+  },
+  "license": "MIT"
 }

@@ -1,6 +1,6 @@
 # Development guide
 
-Leo Dev is a private, UNLICENSED project. Coordinate substantial changes with the repository owner and keep the existing specification authoritative. Preserve unrelated edits and historical evidence; do not reset a working tree to make a check pass.
+Leo Dev is licensed under the [MIT License](LICENSE). Coordinate substantial changes with the repository owner and keep the existing specification authoritative. Preserve unrelated edits and historical evidence; do not reset a working tree to make a check pass.
 
 ## Local checks
 
@@ -44,3 +44,5 @@ Selected upstream method resources are pinned originals. Update them through the
 Explain the concrete behavior change, why it is needed, actual validation and remaining limits. Include the applicable requirement or issue reference. Do not add raw agent transcripts, credentials, personal paths, runtime journals or local approval receipts to Git.
 
 The repository's CI checks source and package integrity. Deployment, publication and destructive changes require the owner's task-specific authorization.
+
+The npm workspaces retain `private: true` to prevent accidental npm publication. That flag does not restrict the public GitHub repository or its MIT license.

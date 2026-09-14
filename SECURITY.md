@@ -12,4 +12,4 @@ Leo Dev is a development workflow and lifecycle controller, not a security sandb
 
 ## Reporting
 
-For this private project, report suspected vulnerabilities directly to the repository owner. Do not open a public issue containing exploit details or credentials.
+Report suspected vulnerabilities privately to the repository owner. Do not open a public issue containing exploit details or credentials.

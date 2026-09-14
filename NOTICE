@@ -1,5 +1,7 @@
 # Notices
 
+Original Leo Dev code and documentation are licensed under the MIT License in LICENSE. Included upstream resources retain the licenses and notices described below. The MIT grant does not cover the Shin-chan fan-art asset or grant rights to third-party characters, names or trademarks; see assets/README.md.
+
 Leo Dev is an original orchestration and packaging implementation informed by publicly documented workflow patterns from BMAD Method, GitHub Spec Kit, cc-sdd, OpenSpec, and Superpowers.
 
 The Codex team reference selectively adapts BMAD party-mode subagent and agent-team protocols at commit abe4eb1bce919c9d22cd18b3519353d5824c4b75. Exact upstream files/hashes and adaptation path are recorded in components.json. Copyright (c) 2025 BMad Code, LLC; MIT license and trademark notice are retained in skills/develop/references/upstream/bmad-team-LICENSE.txt and travel with generated packages. This is not the BMAD workflow engine or an endorsed BMAD distribution. Experimental upstream resources retain their own adjacent provenance/licenses; research snapshots outside this repository are not runtime dependencies.
