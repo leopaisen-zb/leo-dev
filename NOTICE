@@ -1,0 +1,9 @@
+# Notices
+
+Leo Dev is an original orchestration and packaging implementation informed by publicly documented workflow patterns from BMAD Method, GitHub Spec Kit, cc-sdd, OpenSpec, and Superpowers.
+
+The Codex team reference selectively adapts BMAD party-mode subagent and agent-team protocols at commit abe4eb1bce919c9d22cd18b3519353d5824c4b75. Exact upstream files/hashes and adaptation path are recorded in components.json. Copyright (c) 2025 BMad Code, LLC; MIT license and trademark notice are retained in skills/develop/references/upstream/bmad-team-LICENSE.txt and travel with generated packages. This is not the BMAD workflow engine or an endorsed BMAD distribution. Experimental upstream resources retain their own adjacent provenance/licenses; research snapshots outside this repository are not runtime dependencies.
+
+The existing Leo Dev integration references a separately installed, pinned Superpowers distribution. It does not relicense or rename that upstream project.
+
+Production portable packages include selected original cc-sdd resources at 29aee950f4addc36f9aeecb9881c46540e71ecc9 and Spec Kit analyze at 4a7341a93d944d6efe153b71da4a1adb9c2b578c, each with its original MIT license. Exact original and packaged hashes are in skills/develop/references/upstream/provenance.json. The one final-newline normalization and original-to-package paths are disclosed there; the three original SKILL.md files are packaged as RESOURCE.md without byte changes, preserving a single discoverable skill entry. Host path/authority/tool adaptations are separately documented in references/upstream-methods.md; the original methods are not renamed Leo Dev code and are not additional installed plugins or workflow engines. No upstream endorsement is implied.

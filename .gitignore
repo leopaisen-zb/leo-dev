@@ -1,0 +1,20 @@
+node_modules/
+coverage/
+dist/
+.leo-dev/runtime/
+.env
+.env.*
+!.env.example
+*.log
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Personal execution history and generated example data stay local.
+.scratch/
+.superpowers/
+verification/
+experiments/
+docs/research/
+docs/superpowers/plans/
+examples/mochi-board/.data/

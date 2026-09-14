@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "leo-dev/approval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["receiptId", "provenance", "actorLabel", "decision", "grantedAt", "expiresAt", "changeId", "scope", "operationKind", "decisionFingerprint", "gateDefinitionFingerprint", "argvFingerprint", "cwdFingerprint", "environmentFingerprint", "inputFingerprint"],
+  "properties": {
+    "receiptId": { "type": "string", "minLength": 1 },
+    "provenance": { "enum": ["platform-attested", "human-confirmed"] },
+    "actorLabel": { "type": "string", "minLength": 1 },
+    "decision": { "enum": ["grant", "reject"] },
+    "grantedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "changeId": { "type": "string", "minLength": 1 },
+    "taskId": { "type": "string", "minLength": 1 },
+    "scope": { "enum": ["change", "task", "gate"] },
+    "operationKind": { "type": "string", "minLength": 1 },
+    "decisionFingerprint": { "$ref": "#/$defs/hash" },
+    "gateDefinitionFingerprint": { "$ref": "#/$defs/hash" },
+    "argvFingerprint": { "$ref": "#/$defs/hash" },
+    "cwdFingerprint": { "$ref": "#/$defs/hash" },
+    "environmentFingerprint": { "$ref": "#/$defs/hash" },
+    "inputFingerprint": { "$ref": "#/$defs/hash" }
+  },
+  "allOf": [{ "if": { "properties": { "scope": { "enum": ["task", "gate"] } }, "required": ["scope"] }, "then": { "properties": { "taskId": {} }, "required": ["taskId"] } }],
+  "$defs": { "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+}

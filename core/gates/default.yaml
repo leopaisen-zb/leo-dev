@@ -1,0 +1,11 @@
+gates:
+  - id: typecheck
+    argv: [npm, run, typecheck]
+    cwd: .
+    timeoutSeconds: 120
+    required: true
+    replaySafety: pure
+    effectClass: local-verification
+    network: deny
+    environmentAllowlist: []
+    declaredWritePaths: []

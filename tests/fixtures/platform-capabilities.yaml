@@ -1,0 +1,42 @@
+verifiedDate: 2026-09-04
+clients:
+  - client: codex
+    verifiedVersion: 0.153.0
+    invocationSyntax: $develop
+    manifestFormat: .codex-plugin/plugin.json
+    skills: supported
+    subagents: supported
+    hooks: supported
+    localInstall: staging-local-marketplace
+    headless: unknown
+    hostRuntime: externally-required
+    sourceUrls:
+      - https://github.com/openai/plugins
+      - https://learn.chatgpt.com/docs/build-plugins
+  - client: claude-code
+    verifiedVersion: 2.1.220
+    invocationSyntax: /leo-dev:develop
+    manifestFormat: .claude-plugin/plugin.json
+    skills: supported
+    subagents: supported
+    hooks: supported
+    localInstall: claude--plugin-dir
+    headless: unknown
+    hostRuntime: externally-required
+    sourceUrls:
+      - https://code.claude.com/docs/en/plugins
+      - https://code.claude.com/docs/en/skills
+  - client: cursor
+    verifiedVersion: 2026.08.31-4057e58
+    invocationSyntax: to-be-confirmed-by-smoke
+    manifestFormat: .cursor-plugin/plugin.json
+    skills: supported
+    subagents: supported
+    hooks: supported
+    localInstall: cursor-local-plugin-directory
+    headless: unknown
+    hostRuntime: externally-required
+    sourceUrls:
+      - https://cursor.com/docs/reference/plugins
+      - https://cursor.com/docs/skills
+

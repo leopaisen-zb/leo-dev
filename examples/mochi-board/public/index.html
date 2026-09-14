@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#F3F7FF">
+    <title>Mochi Board</title>
+    <link rel="icon" href="/mochi.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="board-shell">
+      <aside class="side-rail" aria-label="Board navigation">
+        <a class="brand" href="#board" aria-label="Mochi Board home">
+          <img src="/mochi.svg" width="42" height="42" alt="">
+          <span>Mochi<br>Board</span>
+        </a>
+        <nav class="side-nav" aria-label="Sections">
+          <a class="nav-link is-current" href="#board" aria-current="page">Board</a>
+          <a class="nav-link" href="#recent-activity">Recent activity</a>
+        </nav>
+        <p class="local-note"><span aria-hidden="true">●</span> Saved on this device</p>
+      </aside>
+
+      <main class="main-content" id="board" tabindex="-1">
+        <header class="board-header">
+          <div>
+            <p class="eyebrow">A little bit at a time</p>
+            <h1>My board</h1>
+            <div class="progress-trail" aria-label="A path from to do to done">
+              <span class="trail-mochi trail-coral" aria-hidden="true">•ᴗ•</span>
+              <i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i>
+              <span class="trail-mochi trail-honey" aria-hidden="true">•ᴗ•</span>
+              <i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i>
+              <span class="trail-mochi trail-mint" aria-hidden="true">•ᴗ•</span>
+            </div>
+          </div>
+          <button class="primary-button" type="button" id="add-task-button" data-action="add-task">
+            <span aria-hidden="true">+</span> Add task
+          </button>
+        </header>
+
+        <section class="toolbar" aria-label="Task controls">
+          <label class="search-control" for="task-search">
+            <span class="sr-only">Search tasks</span>
+            <span aria-hidden="true">⌕</span>
+            <input id="task-search" data-filter="search" type="search" placeholder="Search tasks" autocomplete="off">
+          </label>
+          <label class="select-control" for="priority-filter">
+            <span class="sr-only">Filter by priority</span>
+            <select id="priority-filter" data-filter="priority">
+              <option value="">All priorities</option>
+              <option value="high">High priority</option>
+              <option value="normal">Normal priority</option>
+              <option value="low">Low priority</option>
+            </select>
+          </label>
+          <div class="toolbar-actions">
+            <button class="quiet-button" id="import-button" data-action="import" type="button">Import</button>
+            <button class="quiet-button" id="export-button" data-action="export" type="button">Export</button>
+          </div>
+        </section>
+
+        <p class="load-state" id="app-status" role="status" aria-live="polite">Loading your board…</p>
+        <p class="error-message" id="app-error" role="alert" hidden></p>
+
+        <section class="task-columns" aria-label="Tasks by status" data-board-columns>
+          <section class="task-column todo-column" aria-labelledby="todo-heading" data-status="todo">
+            <header class="column-heading">
+              <div><span class="column-mochi coral-face" aria-hidden="true">•ᴗ•</span><h2 id="todo-heading">To do</h2></div>
+              <span class="task-count" id="todo-count" data-count="todo">0</span>
+            </header>
+            <div class="task-list" id="todo-tasks" data-task-list="todo" aria-live="polite"></div>
+            <p class="empty-state" id="todo-empty" data-empty="todo">A gentle place to begin.</p>
+          </section>
+          <section class="task-column doing-column" aria-labelledby="doing-heading" data-status="doing">
+            <header class="column-heading">
+              <div><span class="column-mochi honey-face" aria-hidden="true">•ᴗ•</span><h2 id="doing-heading">In progress</h2></div>
+              <span class="task-count" id="doing-count" data-count="doing">0</span>
+            </header>
+            <div class="task-list" id="doing-tasks" data-task-list="doing" aria-live="polite"></div>
+            <p class="empty-state" id="doing-empty" data-empty="doing">Pick up a task when you’re ready.</p>
+          </section>
+          <section class="task-column done-column" aria-labelledby="done-heading" data-status="done">
+            <header class="column-heading">
+              <div><span class="column-mochi mint-face" aria-hidden="true">•ᴗ•</span><h2 id="done-heading">Done</h2></div>
+              <span class="task-count" id="done-count" data-count="done">0</span>
+            </header>
+            <div class="task-list" id="done-tasks" data-task-list="done" aria-live="polite"></div>
+            <p class="empty-state" id="done-empty" data-empty="done">Finished tasks can rest here.</p>
+          </section>
+        </section>
+
+        <section class="activity-section" id="recent-activity" aria-labelledby="activity-heading">
+          <div class="section-title"><p class="eyebrow">A small record</p><h2 id="activity-heading">Recent activity</h2></div>
+          <ol class="activity-list" id="activity-list" data-activity-list>
+            <li class="empty-activity" id="activity-empty">Your task updates will appear here.</li>
+          </ol>
+        </section>
+      </main>
+    </div>
+
+    <dialog class="task-dialog" id="task-dialog" aria-labelledby="task-dialog-title">
+      <form id="task-form" data-task-form method="dialog">
+        <div class="dialog-header"><div><p class="eyebrow">One small thing</p><h2 id="task-dialog-title">Add a task</h2></div><button class="icon-button" type="button" data-action="close-task-dialog" aria-label="Close dialog">×</button></div>
+        <input type="hidden" id="task-id" data-field="id">
+        <label for="task-title">Title <span aria-hidden="true">*</span></label>
+        <input id="task-title" data-field="title" name="title" type="text" maxlength="120" required>
+        <label for="task-notes">Notes</label>
+        <textarea id="task-notes" data-field="notes" name="notes" maxlength="2000" rows="4"></textarea>
+        <div class="field-row">
+          <label for="task-status">Status<select id="task-status" data-field="status" name="status"><option value="todo">To do</option><option value="doing">In progress</option><option value="done">Done</option></select></label>
+          <label for="task-priority">Priority<select id="task-priority" data-field="priority" name="priority"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></label>
+        </div>
+        <p class="dialog-error" id="task-form-error" role="alert" hidden></p>
+        <div class="dialog-actions"><button class="quiet-button" type="button" data-action="close-task-dialog">Cancel</button><button class="primary-button" id="save-task-button" type="submit">Save task</button></div>
+      </form>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="delete-dialog" aria-labelledby="delete-dialog-title">
+      <form method="dialog"><h2 id="delete-dialog-title">Delete this task?</h2><p>This removes the task from your board.</p><p class="dialog-error" id="delete-form-error" role="alert" hidden></p><div class="dialog-actions"><button class="quiet-button" value="cancel">Keep task</button><button class="danger-button" id="confirm-delete-button" data-action="confirm-delete" value="confirm">Delete task</button></div></form>
+    </dialog>
+    <dialog class="import-dialog" id="import-dialog" aria-labelledby="import-dialog-title" aria-describedby="import-dialog-description">
+      <form id="import-form" method="dialog">
+        <div class="dialog-header"><div><p class="eyebrow">Move a board</p><h2 id="import-dialog-title">Import tasks</h2></div><button class="icon-button" type="button" data-action="close-import-dialog" aria-label="Close dialog">×</button></div>
+        <p id="import-dialog-description">Paste a Mochi Board JSON export. Importing replaces the tasks currently on this board.</p>
+        <label for="import-json">Board JSON</label>
+        <textarea id="import-json" rows="12" spellcheck="false" autocomplete="off" aria-describedby="import-dialog-description import-form-error"></textarea>
+        <p class="dialog-error" id="import-form-error" role="alert" hidden></p>
+        <div class="dialog-actions"><button class="quiet-button" type="button" data-action="close-import-dialog">Cancel</button><button class="primary-button" id="confirm-import-button" type="submit">Replace tasks</button></div>
+      </form>
+    </dialog>
+    <script src="/app.js"></script>
+  </body>
+</html>

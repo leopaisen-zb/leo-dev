@@ -1,0 +1,1 @@
+{"id":"task-one","revision":1,"state":"ready","dependsOn":[],"allowedPaths":["src/**"],"acceptance":[],"gateIds":[],"risk":"lite","command":"echo bad"}

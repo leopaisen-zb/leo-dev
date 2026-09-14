@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "leo-dev/evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "runId", "taskId", "taskRevision", "leaseGeneration", "gateId", "repositoryIdentity", "treeHash", "inputTreeHash", "writeSurfaceHash", "inputWriteSurfaceHash", "operationFingerprint", "executionFingerprint", "artifactHashes", "timestamp", "exitCode", "runStatus", "startedAt", "finishedAt", "durationMs", "stdoutLogPath", "stderrLogPath", "gateDefinitionHash"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "taskId": { "type": "string", "minLength": 1 },
+    "taskRevision": { "type": "integer", "minimum": 1 },
+    "leaseGeneration": { "type": "integer", "minimum": 1 },
+    "gateId": { "type": "string", "minLength": 1 },
+    "repositoryIdentity": { "$ref": "#/$defs/hash" },
+    "treeHash": { "$ref": "#/$defs/hash" },
+    "operationFingerprint": { "$ref": "#/$defs/hash" },
+    "artifactHashes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/hash" }, "uniqueItems": true },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "gateDefinitionHash": { "$ref": "#/$defs/hash" },
+    "inputTreeHash": { "$ref": "#/$defs/hash" },
+    "writeSurfaceHash": { "$ref": "#/$defs/hash" },
+    "inputWriteSurfaceHash": { "$ref": "#/$defs/hash" },
+    "executionFingerprint": { "$ref": "#/$defs/hash" },
+    "exitCode": { "type": ["integer", "null"] },
+    "runStatus": { "enum": ["succeeded", "failed", "timed-out", "output-capped", "undeclared-writes"] },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "finishedAt": { "type": "string", "format": "date-time" },
+    "durationMs": { "type": "integer", "minimum": 0 },
+    "stdoutLogPath": { "type": "string", "minLength": 1 },
+    "stderrLogPath": { "type": "string", "minLength": 1 }
+  },
+  "$defs": { "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+}

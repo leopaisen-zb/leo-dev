@@ -1,0 +1,2 @@
+import type { Command } from 'commander'; import { action, change, writable, type Execute } from '../cli/command.js';
+export function registerRoute(program: Command, execute: Execute): void { writable(change(program.command('route')).option('--task <id>').option('--gate <id>').option('--plan <path>').option('--registry <path>').option('--assessment <path>')).action(action(program, 'route', execute)); }

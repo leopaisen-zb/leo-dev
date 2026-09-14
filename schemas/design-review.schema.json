@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "leo-dev/design-review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["receiptId", "provenance", "actorLabel", "changeId", "specHash", "planHash", "designHash", "producerSession", "findingsHash", "verdict", "timestamp", "expiresAt"],
+  "properties": {
+    "receiptId": { "type": "string", "minLength": 1 }, "provenance": { "enum": ["platform-attested", "human-confirmed", "agent-asserted"] }, "actorLabel": { "type": "string", "minLength": 1 }, "sessionId": { "type": "string", "minLength": 1 },
+    "changeId": { "type": "string", "minLength": 1 }, "specHash": { "$ref": "#/$defs/hash" }, "planHash": { "$ref": "#/$defs/hash" }, "designHash": { "$ref": "#/$defs/hash" }, "producerSession": { "type": "string", "minLength": 1 }, "findingsHash": { "$ref": "#/$defs/hash" }, "verdict": { "enum": ["pass", "reject"] }, "timestamp": { "type": "string", "format": "date-time" }, "expiresAt": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [{ "if": { "properties": { "provenance": { "const": "platform-attested" } }, "required": ["provenance"] }, "then": { "properties": { "sessionId": {} }, "required": ["sessionId"] } }],
+  "$defs": { "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+}

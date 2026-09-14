@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>Leo Dev Browser Smoke</title>
+<link rel="icon" href="data:,">
+<body>
+<h1>训练记录 · 本地工具验证</h1>
+<form id="entry"><label for="activity">训练名称</label><input id="activity" required>
+<button type="submit">保存记录</button></form>
+<p role="status" id="result">尚未保存</p>
+<script>
+document.getElementById('entry').addEventListener('submit', event => {
+  event.preventDefault();
+  document.getElementById('result').textContent = '已保存：' + document.getElementById('activity').value;
+});
+</script>
+</body></html>

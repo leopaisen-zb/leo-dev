@@ -1,0 +1,29 @@
+version: 1
+cases:
+  - id: copy-edit
+    input: { contract: none, data: none, security: none, infrastructure: none, reversibility: easy, blastRadius: local, codeSpread: single-file, unresolvedDecisions: 0 }
+    expectedRisk: lite
+  - id: local-bug
+    input: { contract: local, data: none, security: none, infrastructure: none, reversibility: easy, blastRadius: local, codeSpread: single-file, unresolvedDecisions: 0 }
+    expectedRisk: lite
+  - id: multi-file-feature
+    input: { contract: local, data: local, security: none, infrastructure: none, reversibility: easy, blastRadius: multi-file, codeSpread: multi-file, unresolvedDecisions: 0 }
+    expectedRisk: standard
+  - id: public-api-change
+    input: { contract: public-api, data: none, security: none, infrastructure: none, reversibility: easy, blastRadius: local, codeSpread: single-file, unresolvedDecisions: 0 }
+    expectedRisk: standard
+  - id: migration
+    input: { contract: local, data: migration, security: none, infrastructure: none, reversibility: difficult, blastRadius: broad, codeSpread: multi-file, unresolvedDecisions: 0 }
+    expectedRisk: full
+  - id: auth
+    input: { contract: local, data: none, security: auth, infrastructure: none, reversibility: easy, blastRadius: multi-file, codeSpread: multi-file, unresolvedDecisions: 0 }
+    expectedRisk: full
+  - id: infrastructure
+    input: { contract: local, data: none, security: none, infrastructure: change, reversibility: difficult, blastRadius: broad, codeSpread: multi-file, unresolvedDecisions: 0 }
+    expectedRisk: full
+  - id: new-project
+    input: { contract: new-project, data: none, security: none, infrastructure: none, reversibility: easy, blastRadius: local, codeSpread: single-file, unresolvedDecisions: 0 }
+    expectedRisk: full
+  - id: ambiguous-request
+    input: { contract: none, data: none, security: none, infrastructure: none, reversibility: easy, blastRadius: local, codeSpread: single-file, unresolvedDecisions: 1 }
+    expectedRisk: full

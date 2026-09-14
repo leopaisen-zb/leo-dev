@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:leo-dev:task",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "revision", "state", "dependsOn", "allowedPaths", "acceptance", "gateIds", "risk"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "state": { "enum": ["pending", "ready", "leased", "implementing", "verifying", "review-required", "reviewing", "remediation", "done", "blocked"] },
+    "dependsOn": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "allowedPaths": { "type": "array", "items": { "$ref": "#/$defs/repositoryPath" }, "minItems": 1 },
+    "acceptance": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "gateIds": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "risk": { "enum": ["lite", "standard", "full"] },
+    "role": { "enum": ["integration"] }
+  },
+  "$defs": { "repositoryPath": { "type": "string", "minLength": 1, "pattern": "^(?![\\\\/])(?![A-Za-z]:)(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+$" } }
+}

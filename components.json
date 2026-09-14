@@ -1,0 +1,17 @@
+{
+  "schema_version": 2,
+  "reviewed_on": "2026-09-14",
+  "required_commands": ["node", "git"],
+  "optional_dependencies": {"paths": [], "plugin_ids": []},
+  "adaptations": [
+    {"name":"cc-sdd-planning-resources","url":"https://github.com/gotalab/cc-sdd","license":"MIT","revision":"29aee950f4addc36f9aeecb9881c46540e71ecc9","mode":"packaged-original-resources-with-explicit-host-binding-not-workflow-engine","provenance":"skills/develop/references/upstream/provenance.json","adaptation":"skills/develop/references/upstream-methods.md","license_file":"skills/develop/references/upstream/cc-sdd/LICENSE"},
+    {"name":"spec-kit-analyze-resource","url":"https://github.com/github/spec-kit","license":"MIT","revision":"4a7341a93d944d6efe153b71da4a1adb9c2b578c","mode":"packaged-original-analyze-with-read-only-host-binding-not-cli","provenance":"skills/develop/references/upstream/provenance.json","adaptation":"skills/develop/references/upstream-methods.md","license_file":"skills/develop/references/upstream/spec-kit/LICENSE"},
+    {"name":"bmad-team-protocol","url":"https://github.com/bmad-code-org/BMAD-METHOD","license":"MIT","revision":"abe4eb1bce919c9d22cd18b3519353d5824c4b75","mode":"selectively-adapted-codex-team-reference-not-workflow-engine","upstream_files":[{"path":"skills/bmad-party-mode/references/mode-subagent.md","sha256":"86161b24a0b13b8f9cb9309042e4249d8caefff8cc33728b084cd2ec22f9d2e1"},{"path":"skills/bmad-party-mode/references/mode-agent-team.md","sha256":"def759a17f4bb45463b68fb74c2b828b0a4241720b2b6cc1c9c611a1016ae9d7"}],"adaptation":"skills/develop/references/codex-team.md","license_file":"skills/develop/references/upstream/bmad-team-LICENSE.txt"}
+  ],
+  "sources": [
+    {"name":"superpowers","url":"https://github.com/obra/superpowers","license":"MIT","revision":"b36e0829c6d0140e93cfef2ca599b1b07d4a7797","version":"6.3.0","mode":"optional-observed-upstream-marketplace"},
+    {"name":"ui-ux-pro-max","url":"https://github.com/nextlevelbuilder/ui-ux-pro-max-skill","license":"MIT","revision":"abb7f2fd5a083fa1ff55c326a963ff0d95c33f99","mode":"optional-observed-upstream"},
+    {"name":"playwright-cli","url":"https://github.com/microsoft/playwright-cli","license":"Apache-2.0","observed_cli_version":"0.1.18","mode":"optional-host-browser-verification"}
+  ],
+  "notes": "Source provenance records selected upstream material. Optional dependencies are checked only when configured and are not business acceptance evidence."
+}

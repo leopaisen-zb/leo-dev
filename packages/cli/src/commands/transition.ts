@@ -1,0 +1,2 @@
+import type { Command } from 'commander'; import { action, change, writable, type Execute } from '../cli/command.js';
+export function registerTransition(program: Command, execute: Execute): void { writable(change(program.command('transition')).requiredOption('--scope <scope>').requiredOption('--to <state>').option('--task <id>').option('--run <id>').option('--reason <reason>').option('--design <repository-path>').option('--session <producer-session>').option('--receipt <path>').option('--archive <path>')).action(action(program, 'transition', execute)); }

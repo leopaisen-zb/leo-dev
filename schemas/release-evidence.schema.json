@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "leo-dev/release-evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "changeId", "specHash", "candidateTreeHash", "sessionId", "verifierRunId", "provider", "status", "checks"],
+  "properties": {
+    "schemaVersion": { "const": 1 }, "changeId": { "type": "string", "minLength": 1 },
+    "specHash": { "$ref": "#/$defs/hash" }, "candidateTreeHash": { "$ref": "#/$defs/hash" },
+    "sessionId": { "type": "string", "minLength": 1 }, "verifierRunId": { "type": "string", "minLength": 1 },
+    "provider": { "enum": ["github-actions", "local-verifier"] }, "status": { "const": "passed" },
+    "checks": { "type": "array", "minItems": 1, "items": { "type": "object", "additionalProperties": false, "required": ["name", "argv", "exitCode", "gateDefinitionHash"], "properties": { "name": { "type": "string", "minLength": 1 }, "argv": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }, "exitCode": { "const": 0 }, "gateDefinitionHash": { "$ref": "#/$defs/hash" } } } }
+  },
+  "$defs": { "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+}

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "leo-dev/task-plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "tasks"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "tasks": { "type": "array", "items": { "$ref": "urn:leo-dev:task" }, "uniqueItems": true }
+  }
+}

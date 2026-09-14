@@ -1,0 +1,2 @@
+import type { Command } from 'commander'; import { action, task, writable, type Execute } from '../cli/command.js';
+export function registerClaim(program: Command, execute: Execute): void { writable(task(program.command('claim')).option('--ttl <milliseconds>').option('--session <session-id>').option('--supersede <expired-run-id>').option('--design-review-receipt <path>')).action(action(program, 'claim', execute)); }

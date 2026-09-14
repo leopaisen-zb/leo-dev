@@ -1,0 +1,1 @@
+{"id":"unit","argv":["node","--version"],"cwd":".","timeoutSeconds":30,"required":true,"replaySafety":"pure","effectClass":"local-verification","network":"deny","environmentAllowlist":["PATH"],"declaredWritePaths":[]}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "leo-dev/review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["receiptId", "provenance", "actorLabel", "taskId", "taskRevision", "leaseGeneration", "specHash", "taskHash", "treeHash", "findingsHash", "verdict", "timestamp", "expiresAt"],
+  "properties": {
+    "receiptId": { "type": "string", "minLength": 1 },
+    "provenance": { "enum": ["platform-attested", "human-confirmed", "agent-asserted"] },
+    "actorLabel": { "type": "string", "minLength": 1 },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "recoveryId": { "type": "string", "minLength": 1 },
+    "taskId": { "type": "string", "minLength": 1 },
+    "taskRevision": { "type": "integer", "minimum": 1 },
+    "leaseGeneration": { "type": "integer", "minimum": 1 },
+    "specHash": { "$ref": "#/$defs/hash" },
+    "taskHash": { "$ref": "#/$defs/hash" },
+    "treeHash": { "$ref": "#/$defs/hash" },
+    "findingsHash": { "$ref": "#/$defs/hash" },
+    "verdict": { "enum": ["pass", "reject"] },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "assessments": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["receiptId", "area", "provenance", "actorLabel", "taskId", "taskRevision", "leaseGeneration", "specHash", "taskHash", "treeHash", "findingsHash", "verdict", "timestamp", "expiresAt"],
+        "properties": {
+          "receiptId": { "type": "string", "minLength": 1 }, "area": { "enum": ["architecture", "security", "nfr"] }, "provenance": { "enum": ["platform-attested", "human-confirmed"] }, "actorLabel": { "type": "string", "minLength": 1 }, "sessionId": { "type": "string", "minLength": 1 }, "runId": { "type": "string", "minLength": 1 }, "taskId": { "type": "string", "minLength": 1 }, "taskRevision": { "type": "integer", "minimum": 1 }, "leaseGeneration": { "type": "integer", "minimum": 1 }, "specHash": { "$ref": "#/$defs/hash" }, "taskHash": { "$ref": "#/$defs/hash" }, "treeHash": { "$ref": "#/$defs/hash" }, "findingsHash": { "$ref": "#/$defs/hash" }, "verdict": { "enum": ["pass", "reject"] }, "timestamp": { "type": "string", "format": "date-time" }, "expiresAt": { "type": "string", "format": "date-time" }
+        },
+        "allOf": [{ "if": { "properties": { "provenance": { "const": "platform-attested" } }, "required": ["provenance"] }, "then": { "properties": { "sessionId": {}, "runId": {} }, "required": ["sessionId", "runId"] } }]
+      }
+    }
+  },
+  "allOf": [{ "if": { "properties": { "provenance": { "enum": ["platform-attested", "agent-asserted"] } }, "required": ["provenance"] }, "then": { "properties": { "sessionId": {}, "runId": {} }, "required": ["sessionId", "runId"] } }],
+  "$defs": { "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+}

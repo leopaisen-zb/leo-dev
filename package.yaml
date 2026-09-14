@@ -1,0 +1,7 @@
+name: leo-dev
+version: 0.2.0
+private: true
+license: UNLICENSED
+description: A portable, evidence-aware development workflow for coding agents.
+author:
+  name: Leo

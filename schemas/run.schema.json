@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "leo-dev/run",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "state", "taskId", "taskRevision", "leaseGeneration", "inputTreeHash"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "state": { "enum": ["created", "running", "succeeded", "failed", "timed-out", "cancelled", "abandoned", "unknown"] },
+    "taskId": { "type": "string", "minLength": 1 },
+    "taskRevision": { "type": "integer", "minimum": 1 },
+    "leaseGeneration": { "type": "integer", "minimum": 1 },
+    "inputTreeHash": { "$ref": "#/$defs/hash" },
+    "resumeTaskStateOnSuccess": { "enum": ["verifying", "review-required", "reviewing"] },
+    "priorChangeState": { "enum": ["triage", "discovery", "spec-review", "spec-approved", "design-review", "design-approved", "task-ready", "executing", "integration-review", "release-evidence"] }
+  },
+  "allOf": [{ "if": { "properties": { "state": { "const": "unknown" } }, "required": ["state"] }, "then": { "properties": { "resumeTaskStateOnSuccess": {}, "priorChangeState": {} }, "required": ["resumeTaskStateOnSuccess", "priorChangeState"] } }],
+  "$defs": { "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+}

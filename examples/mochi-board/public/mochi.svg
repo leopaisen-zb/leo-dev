@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Mochi Board mark</title><desc id="desc">A smiling pastel mochi with a small checklist flag.</desc>
+  <path d="M17 68c0-31 19-48 47-48s47 17 47 48c0 28-17 42-47 42S17 96 17 68Z" fill="#D6CFF3" stroke="#273854" stroke-width="5"/>
+  <path d="M29 65c0-23 14-35 35-35s35 12 35 35c0 22-13 34-35 34S29 87 29 65Z" fill="#F3F7FF"/>
+  <ellipse cx="47" cy="68" rx="4" ry="5" fill="#273854"/><ellipse cx="81" cy="68" rx="4" ry="5" fill="#273854"/>
+  <path d="M53 82c7 7 15 7 22 0" fill="none" stroke="#273854" stroke-linecap="round" stroke-width="4"/>
+  <path d="M82 29c13-7 24-3 29 4l-12 10c-4-5-10-7-17-5Z" fill="#ED7664" stroke="#273854" stroke-linejoin="round" stroke-width="4"/>
+  <path d="M26 49 16 39l8-9 10 10" fill="#F1C665" stroke="#273854" stroke-linejoin="round" stroke-width="4"/>
+  <circle cx="40" cy="84" r="4" fill="#ED7664" opacity=".72"/><circle cx="88" cy="84" r="4" fill="#ED7664" opacity=".72"/>
+  <path d="M33 108c8 7 20 10 31 10 10 0 22-3 31-10" fill="none" stroke="#273854" stroke-linecap="round" stroke-width="5"/>
+  <path d="M95 105h14" stroke="#BEE3D0" stroke-linecap="round" stroke-width="8"/>
+</svg>

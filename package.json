@@ -1,0 +1,38 @@
+{
+  "name": "leo-dev",
+  "version": "0.2.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "npm run test:controller --",
+    "test:controller": "npm run build && vitest run tests/changes tests/repository tests/routing tests/schema tests/state tests/gates && node --test tests/**/*.test.mjs && vitest run --no-file-parallelism tests/skill-contract tests/cli",
+    "typecheck": "tsc --noEmit -p packages/cli/tsconfig.json && tsc --noEmit -p tests/routing/tsconfig.json",
+    "build": "tsc -p packages/cli/tsconfig.json",
+    "build:adapters": "node scripts/build-adapters.mjs",
+    "build:marketplace": "npm run build:adapters && node scripts/create-codex-marketplace.mjs --dist dist --out dist/marketplace",
+    "verify:packages": "node scripts/verify-packages.mjs"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/leopaisen-zb/leo-dev"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/proper-lockfile": "^4.1.4",
+    "ajv": "^8.17.1",
+    "proper-lockfile": "^4.1.2",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.3",
+    "yaml": "^2.7.1"
+  },
+  "dependencies": {
+    "ajv-formats": "3.0.1"
+  }
+}

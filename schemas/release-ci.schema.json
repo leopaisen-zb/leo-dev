@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "leo-dev/release-ci",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["receiptId", "provenance", "actorLabel", "sessionId", "provider", "verifierRunId", "changeId", "specHash", "candidateTreeHash", "releaseProofHash", "evidenceRef", "evidenceHash", "status", "timestamp", "expiresAt"],
+  "properties": {
+    "receiptId": { "type": "string", "minLength": 1 },
+    "provenance": { "enum": ["platform-attested", "human-confirmed"] },
+    "actorLabel": { "type": "string", "minLength": 1 },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "provider": { "enum": ["github-actions", "local-verifier"] },
+    "verifierRunId": { "type": "string", "minLength": 1 },
+    "changeId": { "type": "string", "minLength": 1 },
+    "specHash": { "$ref": "#/$defs/hash" },
+    "candidateTreeHash": { "$ref": "#/$defs/hash" },
+    "releaseProofHash": { "$ref": "#/$defs/hash" },
+    "evidenceRef": { "$ref": "#/$defs/path" },
+    "evidenceHash": { "$ref": "#/$defs/hash" },
+    "status": { "const": "passed" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "path": { "type": "string", "minLength": 1, "pattern": "^(?![\\\\/])(?![A-Za-z]:)(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+$" }
+  }
+}

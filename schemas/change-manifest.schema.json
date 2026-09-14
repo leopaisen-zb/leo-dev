@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "leo-dev/change-manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "state", "unresolvedDecisions", "specRef", "sourceKind", "sourceHash", "approvalRef", "approvalHash", "importMode"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "minLength": 1 },
+    "state": { "enum": ["triage", "discovery", "spec-review", "spec-approved", "design-review", "design-approved", "task-ready", "executing", "integration-review", "release-evidence", "archived", "approval-required", "blocked"] },
+    "unresolvedDecisions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "specRef": { "type": "string", "minLength": 1, "pattern": "^(?![\\\\/])(?![A-Za-z]:)(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+$" },
+    "sourceKind": { "enum": ["repository-file", "external-issue", "inline"] },
+    "sourceHash": { "$ref": "#/$defs/hash" },
+    "approvalRef": { "type": ["string", "null"], "minLength": 1 },
+    "approvalHash": { "anyOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }] },
+    "importMode": { "enum": ["reference", "snapshot"] }
+  },
+  "$defs": { "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+}

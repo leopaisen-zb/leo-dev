@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "leo-dev/resolution",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["receiptId", "blockerId", "provenance", "actorLabel", "decision", "scope", "changeId", "artifactHashes", "targetRecoveryState", "timestamp", "expiresAt"],
+  "properties": {
+    "receiptId": { "type": "string", "minLength": 1 },
+    "blockerId": { "type": "string", "minLength": 1 },
+    "provenance": { "enum": ["platform-attested", "human-confirmed"] },
+    "actorLabel": { "type": "string", "minLength": 1 },
+    "decision": { "const": "resume" },
+    "scope": { "enum": ["change", "task"] },
+    "changeId": { "type": "string", "minLength": 1 },
+    "taskId": { "type": "string", "minLength": 1 },
+    "taskRevision": { "type": "integer", "minimum": 1 },
+    "leaseGeneration": { "type": "integer", "minimum": 1 },
+    "artifactHashes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/hash" }, "uniqueItems": true },
+    "targetRecoveryState": { "enum": ["ready", "triage", "discovery", "spec-review", "spec-approved", "design-review", "design-approved", "task-ready", "executing", "integration-review", "release-evidence"] },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [{ "if": { "properties": { "scope": { "const": "task" } }, "required": ["scope"] }, "then": { "required": ["taskId", "taskRevision", "leaseGeneration"], "properties": { "taskId": {}, "taskRevision": {}, "leaseGeneration": {}, "targetRecoveryState": { "const": "ready" } } } }],
+  "$defs": { "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+}

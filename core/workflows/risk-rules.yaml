@@ -1,0 +1,39 @@
+version: 1
+levels: [lite, standard, full]
+thresholds: { lite: 2, standard: 7, full: 9007199254740991 }
+limits: { maxUnresolvedDecisions: 1000000 }
+dimensions:
+  contract:
+    none: { score: 0, reasonCode: SCORE_CONTRACT_NONE, prose: No contract surface changes. }
+    local: { score: 1, reasonCode: SCORE_CONTRACT_LOCAL, prose: Local contract change. }
+    public-api: { score: 4, reasonCode: SCORE_CONTRACT_PUBLIC_API, prose: Public API change. }
+    new-project: { score: 9, reasonCode: SCORE_CONTRACT_NEW_PROJECT, prose: New project. }
+  data:
+    none: { score: 0, reasonCode: SCORE_DATA_NONE, prose: No data change. }
+    local: { score: 1, reasonCode: SCORE_DATA_LOCAL, prose: Local data change. }
+    migration: { score: 9, reasonCode: SCORE_DATA_MIGRATION, prose: Data migration. }
+  security:
+    none: { score: 0, reasonCode: SCORE_SECURITY_NONE, prose: No security change. }
+    auth: { score: 9, reasonCode: SCORE_SECURITY_AUTH, prose: Authentication or authorization change. }
+  infrastructure:
+    none: { score: 0, reasonCode: SCORE_INFRASTRUCTURE_NONE, prose: No infrastructure change. }
+    change: { score: 9, reasonCode: SCORE_INFRASTRUCTURE_CHANGE, prose: Infrastructure change. }
+  reversibility:
+    easy: { score: 0, reasonCode: SCORE_REVERSIBILITY_EASY, prose: Easily reversible. }
+    difficult: { score: 2, reasonCode: SCORE_REVERSIBILITY_DIFFICULT, prose: Difficult to reverse. }
+  blastRadius:
+    local: { score: 0, reasonCode: SCORE_BLAST_RADIUS_LOCAL, prose: Local blast radius. }
+    multi-file: { score: 2, reasonCode: SCORE_BLAST_RADIUS_MULTI_FILE, prose: Multi-file blast radius. }
+    broad: { score: 3, reasonCode: SCORE_BLAST_RADIUS_BROAD, prose: Broad blast radius. }
+  codeSpread:
+    single-file: { score: 0, reasonCode: SCORE_CODE_SPREAD_SINGLE_FILE, prose: Single-file change. }
+    multi-file: { score: 2, reasonCode: SCORE_CODE_SPREAD_MULTI_FILE, prose: Multi-file code spread. }
+  unresolvedDecisions:
+    perUnit: { score: 10, reasonCode: SCORE_UNRESOLVED_DECISION, prose: Unresolved decision. }
+floors:
+  contract: { public-api: standard, new-project: full }
+  data: { migration: full }
+  security: { auth: full }
+  infrastructure: { change: full }
+  codeSpread: { multi-file: standard }
+  unresolvedDecisions: { positive: full }

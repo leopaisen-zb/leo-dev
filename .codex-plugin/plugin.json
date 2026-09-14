@@ -1,0 +1,28 @@
+{
+  "name": "leo-dev",
+  "version": "0.2.0",
+  "description": "A portable, evidence-aware development workflow for coding agents.",
+  "author": {
+    "name": "Leo"
+  },
+  "skills": "./skills/",
+  "repository": "https://github.com/leopaisen-zb/leo-dev",
+  "interface": {
+    "displayName": "Leo Dev",
+    "shortDescription": "Continue approved development with evidence-based verification.",
+    "longDescription": "A portable workflow for coding agents that preserves approved specifications and reports verified delivery evidence.",
+    "developerName": "Leo",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Use $develop to continue approved work with verification evidence.",
+      "Use $develop to inspect the project and implement an approved feature."
+    ],
+    "composerIcon": "./assets/shinchan-logo.png",
+    "logo": "./assets/shinchan-logo.png"
+  }
+}
