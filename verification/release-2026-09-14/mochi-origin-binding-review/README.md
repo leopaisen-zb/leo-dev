@@ -1,0 +1,7 @@
+# Existing Origin boundary defect
+
+Root executed `probe.mjs` on 2026-09-14 at 12:34:42 UTC using Node22, a real loopback listener on an ephemeral port and an independent temporary board file. No application source, accepted task history or active controller record was changed. The probe connects only to 127.0.0.1; the foreign hostname is a request header, not an external DNS or network request.
+
+The normal actual-listener Origin control returned201. A mutating request with an explicit `http://foreign.invalid:<port>` Origin also returned201 when its client-controlled Host matched that origin. Exact disk hashes changed. The fixed spec Requirement2 calls for foreign-Origin403 refusal; using the request's arbitrary Host as the sole authority defeats that constraint. This is a reproduced HTTP contract failure, not evidence of an attack on the user's machine.
+
+The original RED baseline is retained in `baseline.log` and `baseline-result.json`. The M4 writer fixed the common Origin check within its server ownership. Root reran the unchanged probe: `green.log` records a valid-listener 201 control, foreign Origin 403, and exact disk-byte preservation. The independent backend reviewer also reran the original probe before moving to its own owned harness; `origin-rerun.log` and the current `result.json` record that subsequent passing run. No RED baseline was removed. The frozen HTTP oracle remains unchanged; M5 security assessment remains separate.

@@ -1,0 +1,9 @@
+# Independent host-reference review
+
+Reviewer: existing `/root/codex_candidate_regressions`, independent of C3 changes. It was reused through followup; this tool cannot override or report the original model configuration. No new model-routing claim is made for this review. Scope: actual pre-change/source reference diff, C3 briefs, components/NOTICE; no unfinished controller implementation review and no host execution.
+
+Initial review identified three actionable reference gaps: no concrete ACK-to-host-evidence mapping; bare CLI command could be mistaken for a PATH-installed tool; missing-member detection lacked explicit evidence predicates. It also identified inconsistent wait/interrupt namespaces. Main verified these against actual tools: send_message has no stable read receipt, wait only signals mailbox updates, and timeout does not prove loss.
+
+Fixes require actual recipient response saved with handle/generation/file/hash, keep unsent/unconfirmed messages pending, use explicit Node/CLI path variables from preflight, and permit rebinding only on explicit unavailable evidence or clearly labelled simulation. Main's separate integration check found components.sources expects local Git checkout paths; the BMAD adaptation record moved to adaptations. Actual doctor was RED (KeyError, exit1) then GREEN (exit0), without editing installed state or doctor logic.
+
+Scoped independent re-review closed ACK, loss predicates, namespaces and metadata. It found one remaining bare CLI preflight phrase; main changed that phrase to the same explicit path variables and moved their setup ahead of preflight. Fresh consumer/live validation and final integrated review still required. Upstream SHA hashes were actually recomputed by main and the shipped license compared byte-for-byte to pinned upstream; this reviewer did not separately fetch upstream.
