@@ -8,7 +8,7 @@
 
 Leo Dev helps a coding agent carry an approved idea through design, implementation, checks, review and delivery. It reuses selected upstream methods and keeps task state, evidence and recovery in one local lifecycle controller.
 
-Call **`$develop`** in a Codex session. Keep your existing specification, use the methods the task needs, and get a delivery report that distinguishes passed checks from work that was not run.
+Call **`$leo-dev:develop`** in a Codex session. Keep your existing specification, use the methods the task needs, and get a delivery report that distinguishes passed checks from work that was not run.
 
 <p align="center">
   <img src="assets/workflow.svg" width="920" alt="Specification and design lead to tasks, implementation and checks, independent review, and release evidence. Rejected reviews return to implementation.">
@@ -26,7 +26,7 @@ Leo Dev is a workflow and local integrity mechanism. Your host's sandbox, permis
 
 ## Start from source
 
-Prerequisites: **Node.js 20 or newer**, npm, Git, and Codex for the host workflow. The example app uses Node built-ins and needs no additional packages. Superpowers and relevant UI/browser skills are selected from the host's available skill catalog; missing capabilities must be reported.
+Use **Node.js 22** for source development and quality checks, plus npm, Git, and Codex for the host workflow. The packaged controller retains its Node.js 20-or-newer runtime contract. The example app uses Node built-ins and needs no additional packages. Superpowers and relevant UI/browser skills are selected from the host's available skill catalog; missing capabilities must be reported.
 
 ```sh
 git clone https://github.com/leopaisen-zb/leo-dev.git
@@ -34,7 +34,9 @@ cd leo-dev
 npm ci
 npm run build
 npm run typecheck
+npm run lint:quality
 npm test
+npm run test:quality-coverage
 npm run build:adapters
 npm run verify:packages
 npm run build:marketplace
@@ -44,10 +46,12 @@ npm run build:marketplace
 
 Install the generated package using the documented commands in [the installation guide](docs/installation.md). Source compilation, package integrity and an actual new Codex session are separate checks; their recorded outcomes are in [release evidence](docs/release-evidence.md).
 
+The quality checks focus on design admission and the relevant recovery behavior. Required test failures and scoped lint errors fail the check; coverage is reporting-only while the first baseline is reviewed. CLI tests execute compiled child processes, so worker-process V8 coverage does not represent all behavior those tests exercise. Historical verification copies are excluded from test discovery.
+
 ## Use the workflow
 
 ```text
-$develop Build the approved feature in this repository.
+$leo-dev:develop Build the approved feature in this repository.
 Reuse the existing specification, complete the implementation and checks,
 get an independent review, and report the actual evidence.
 ```
@@ -55,7 +59,7 @@ get an independent review, and report the actual evidence.
 For an interrupted task:
 
 ```text
-$develop Continue the current change.
+$leo-dev:develop Continue the current change.
 Inspect durable state and the actual working tree before taking a new lease.
 Preserve unrelated edits and do not reuse stale review evidence.
 ```
@@ -64,9 +68,32 @@ Small, clear edits use proportionate checks. Substantial work uses the existing 
 
 See the [lifecycle and command guide](skills/develop/references/lifecycle.md), [Codex team recipe](skills/develop/references/codex-team.md), and [review protocol](skills/develop/references/review-protocol.md).
 
+## Inspect task state
+
+The local read-only board shows a change's recorded tasks, assignments, blockers,
+team activity, and test/review evidence from the controller journal.
+
+<p align="center">
+  <img src="assets/leo-dev-board.png" width="920" alt="Leo Dev showing a completed benchmark repair, recorded test and independent review evidence, and two recorded team members">
+</p>
+
+This is actual state from a coding-benchmark run. The [mobile view](assets/leo-dev-board-mobile.png)
+shows the same recorded evidence at 390 pixels. A recorded pass and its relationship
+to the current tree are displayed separately.
+
+```sh
+node packages/cli/dist/index.js board --repo /absolute/path/to/project --change your-change-id
+```
+
+Open the printed localhost URL and use **Refresh** to read the latest state.
+Selecting a task reveals its evidence references. The board reports unavailable
+or stale observations and keeps host liveness explicitly unknown. Viewing does
+not start agents, edit tasks, or repair history. See the [board guide](docs/board.md)
+for packaged usage and the read boundary.
+
 ## Meet Mochi Board
 
-A little localhost task board is included as a substantial development exercise: persistent tasks, three workflow columns, priority and text filters, import/export, and recent activity.
+A separate localhost task-board example is included as a substantial development exercise: persistent tasks, three workflow columns, priority and text filters, import/export, and recent activity. Its application data is independent of the controller's task journal.
 
 <p align="center">
   <img src="assets/mochi-board.png" width="920" alt="Mochi Board running locally, with pastel task columns, priority filters, import and export controls, and recent activity">

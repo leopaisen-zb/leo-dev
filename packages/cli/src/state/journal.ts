@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, open, readFile, truncate } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, truncate } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { JournalEvent } from './types.js';
 import { withJournalLock } from './lock.js';
@@ -7,6 +7,9 @@ import { withJournalLock } from './lock.js';
 export class JournalCorruptError extends Error { code = 'JOURNAL_CORRUPT' as const; }
 export class JournalTailMismatchError extends Error { code = 'JOURNAL_TAIL_MISMATCH' as const; }
 export interface ReplayResult { events: JournalEvent[]; discardedIncompleteTail: boolean; }
+export interface JournalObservation extends ReplayResult {
+  identity: { device: number; inode: number; size: number; modifiedMs: number; digest: string };
+}
 export interface JournalTransaction {
   replay(): Promise<ReplayResult>;
   append(input: Input): Promise<JournalEvent>;
@@ -97,21 +100,50 @@ export class Journal {
     return withJournalLock(this.path, () => this.#replayUnlocked(false));
   }
 
+  /** Read only an already-existing journal. This never creates a directory or lock. */
+  async observe(): Promise<JournalObservation> {
+    const before = await lstat(this.path);
+    if (!before.isFile()) throw new JournalCorruptError('Journal observation path is not a file');
+    const raw = await readFile(this.path, 'utf8');
+    const after = await lstat(this.path);
+    if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
+      const error = new Error('Journal changed while it was being observed') as Error & { code: string };
+      error.code = 'JOURNAL_CHANGED'; throw error;
+    }
+    const replay = this.#decode(raw).replay;
+    return { ...replay, identity: { device: after.dev, inode: after.ino, size: after.size, modifiedMs: after.mtimeMs, digest: hash(raw) } };
+  }
+
   async #replayUnlocked(repairIncompleteTail = true): Promise<ReplayResult> {
     let raw: string;
     try { raw = await readFile(this.path, 'utf8'); } catch (error: unknown) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { events: [], discardedIncompleteTail: false }; throw error; }
+    const tail = this.#tail(raw);
+    if (tail.discardedIncompleteTail && repairIncompleteTail) {
+      await truncate(this.path, Buffer.byteLength(tail.retained));
+      const handle = await open(this.path, 'r'); try { await handle.sync(); } finally { await handle.close(); }
+    }
+    return this.#parse(tail.retained, tail.discardedIncompleteTail);
+  }
+
+  #tail(raw: string): { retained: string; discardedIncompleteTail: boolean } {
+    let retained = raw;
     let discardedIncompleteTail = false;
     if (raw && !raw.endsWith('\n')) {
       const cut = raw.lastIndexOf('\n');
-      raw = cut < 0 ? '' : raw.slice(0, cut + 1);
-      if (repairIncompleteTail) {
-        await truncate(this.path, Buffer.byteLength(raw));
-        const handle = await open(this.path, 'r'); try { await handle.sync(); } finally { await handle.close(); }
-      }
+      retained = cut < 0 ? '' : raw.slice(0, cut + 1);
       discardedIncompleteTail = true;
     }
+    return { retained, discardedIncompleteTail };
+  }
+
+  #decode(raw: string): { replay: ReplayResult; retained: string } {
+    const tail = this.#tail(raw);
+    return { replay: this.#parse(tail.retained, tail.discardedIncompleteTail), retained: tail.retained };
+  }
+
+  #parse(retained: string, discardedIncompleteTail: boolean): ReplayResult {
     const events: JournalEvent[] = [];
-    for (const line of raw.split('\n').filter(Boolean)) {
+    for (const line of retained.split('\n').filter(Boolean)) {
       let event: JournalEvent;
       try { event = JSON.parse(line) as JournalEvent; } catch { throw new JournalCorruptError('Malformed committed journal frame'); }
       const previous = events.at(-1);

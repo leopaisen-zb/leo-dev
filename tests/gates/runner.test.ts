@@ -1,9 +1,9 @@
-import { access, appendFile, cp, mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, appendFile, cp, lstat, mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { canonicalTreeHash } from '../../packages/cli/src/repository/tree-hash.js';
 import { GateRegistry, gateDefinitionFingerprint } from '../../packages/cli/src/gates/registry.js';
@@ -590,6 +590,25 @@ describe('reviewed gate runner', () => {
     const inactiveRunner = new GateRunner({ networkIsolation: passthroughIsolation, processLiveness: () => false });
     const fresh = { ...(await request(root, registry, 'ok')), runId: 'run-2', leaseGeneration: 2 };
     await expect(inactiveRunner.recover({ previousRunId: prior.runId, request: fresh })).rejects.toMatchObject({ code: 'RECOVERY_INVALID' });
+  });
+
+  test('inspects an indeterminate prepared attempt from an observation without a lock while retaining phase binding', async () => {
+    const { root, registry } = await fixture();
+    const prior = await request(root, registry, 'ok');
+    const crashed = new GateRunner({ networkIsolation: passthroughIsolation, attemptLifecycle: { async afterPrepared() { throw new Error('stop at prepared'); } } });
+    await expect(crashed.run(prior)).rejects.toThrow('stop at prepared');
+
+    const journal = new Journal(runtimePaths(root, prior.changeId).journal);
+    const observation = await journal.observe();
+    const before = { bytes: await readFile(journal.path), directory: await lstat(dirname(journal.path), { bigint: true }) };
+    await expect(new GateRunner({ networkIsolation: passthroughIsolation }).inspectIndeterminateAttempt(prior, [observation.events[0]!.eventHash], false, observation))
+      .resolves.toMatchObject({ inputTreeHash: prior.expectedInputTreeHash, phaseEventHashes: [observation.events[0]!.eventHash] });
+    await expect(new GateRunner({ networkIsolation: passthroughIsolation }).inspectIndeterminateAttempt(prior, ['f'.repeat(64)], false, observation))
+      .rejects.toMatchObject({ code: 'RECOVERY_INVALID' });
+    const after = { bytes: await readFile(journal.path), directory: await lstat(dirname(journal.path), { bigint: true }) };
+    expect(after.bytes).toEqual(before.bytes);
+    expect(after.directory.mtimeNs).toBe(before.directory.mtimeNs);
+    expect(after.directory.ctimeNs).toBe(before.directory.ctimeNs);
   });
 
   test('fences and contains an interrupted started launcher before recovery', async () => {

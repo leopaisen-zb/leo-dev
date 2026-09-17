@@ -1,6 +1,6 @@
 # Install in Codex
 
-Build from a checkout of the public repository. Use Node.js 20 or newer and npm. The recorded release host and CI use macOS; the controller's network-deny Gate policy requires an enforceable host sandbox. A Linux or Windows source build alone does not establish that capability.
+Build from a checkout of the public repository using Node.js 22 and npm. The packaged controller retains its Node.js 20-or-newer runtime requirement. The recorded release host and CI use macOS; the controller's network-deny Gate policy requires an enforceable host sandbox. A Linux or Windows source build alone does not establish that capability.
 
 ```sh
 npm ci
@@ -29,12 +29,19 @@ Registration and installation update Codex's local marketplace/plugin configurat
 Start a **new Codex session** in the project you want to work on, then invoke:
 
 ```text
-$develop Continue the approved work in this repository.
+$leo-dev:develop Continue the approved work in this repository.
 Inspect the specification and current state, preserve unrelated edits,
 and complete implementation, independent review and verification.
 ```
 
-Confirm that the session's skill catalog resolves `develop` to the newly installed plugin. If it still shows an older cached path, report that mismatch before calling it a successful installation. See [release evidence](release-evidence.md) for the exact checks performed for this version.
+Check these outcomes separately:
+
+- **Enabled installation:** `codex plugin add` succeeds and `codex plugin list --marketplace leo-dev-release --json` shows the enabled `leo-dev` plugin.
+- **Fresh catalog discovery:** a fresh Codex process resolves exactly one enabled entry, `leo-dev:develop`, from that plugin. The portable skill frontmatter remains `develop`; the qualified selector is the Codex host entry.
+- **Controller invocation:** run the installed controller's help command and check its result, as shown below. Selecting `$leo-dev:develop` identifies the workflow; it does not by itself prove that a controller command ran.
+- **Existing application window:** an older conversation can retain an earlier catalog. Start a new conversation or restart the Codex application according to the host's guidance before checking the entry again.
+
+If the fresh catalog is correct but an old window still omits the entry, record those as separate results. Finding a skill file on disk confirms its presence, but cannot prove that a conversation has loaded it. See [release evidence](release-evidence.md) for the exact checks performed for this version.
 
 ## Use the packaged controller directly
 

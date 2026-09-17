@@ -67,8 +67,8 @@ async function waitUntilExpired(expiresAt: string): Promise<void> {
   while (Date.now() <= deadline) await new Promise((resolveDelay) => setTimeout(resolveDelay, Math.min(25, Math.max(1, deadline - Date.now() + 1))));
 }
 
-async function prepareOrdinaryFreshClaim(root: string, changeId: string, design: Record<string, any>, receiptName: string): Promise<string> {
-  const receipt = await freshReceipt(root, changeId, design, receiptName);
+async function prepareOrdinaryFreshClaim(root: string, changeId: string, design: Record<string, any>, receiptName: string, expiresAt?: string): Promise<string> {
+  const receipt = await freshReceipt(root, changeId, design, receiptName, expiresAt);
   await expect(new Controller().execute('claim', { repo: root, change: changeId, task: 'implementation', session: 'fresh-producer', designReviewReceipt: receipt, faultAt: 'after-batch-prepared' })).rejects.toThrow('Simulated crash');
   return receipt;
 }
@@ -95,6 +95,16 @@ test('claim receipt that expires after planning but before batch preparation rec
   controller.planClaim = async (...args: unknown[]) => { const plan = await planClaim(...args); await waitUntilExpired(expiresAt); return plan; };
   await expect(controller.execute('claim', { repo: root, change: changeId, task: 'implementation', session: 'fresh-producer', designReviewReceipt: receipt })).rejects.toMatchObject({ exitCode: 5, publicCode: 'CONFLICT' });
   expect(await readFile(runtime.journal, 'utf8')).toBe(beforeJournal);
+}, 40_000);
+
+// Mutant caught: recovery rechecks the receipt against its wall clock instead of
+// the immutable preparedAt value, stranding a valid historical claim batch.
+test('prepared fresh-claim recovery accepts a receipt that expired after durable preparation', async () => {
+  const root = await fixture(); const changeId = 'ordinary-historical-receipt'; const design = await activate(root, changeId);
+  const expiresAt = new Date(Date.now() + 150).toISOString();
+  await prepareOrdinaryFreshClaim(root, changeId, design, 'historical-expired.json', expiresAt);
+  await waitUntilExpired(expiresAt);
+  expectExit(cli(root, 'resume', '--change', changeId), 0, 'RESUMED');
 }, 40_000);
 
 test('one captured fresh receipt cannot be replaced between readReceipt and its embedded batch binding', async () => {

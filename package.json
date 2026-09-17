@@ -10,6 +10,8 @@
   "scripts": {
     "test": "npm run test:controller --",
     "test:controller": "npm run build && vitest run tests/changes tests/repository tests/routing tests/schema tests/state tests/gates && node --test tests/**/*.test.mjs && vitest run --no-file-parallelism tests/skill-contract tests/cli",
+    "lint:quality": "eslint packages/cli/src/changes/design-admission.ts packages/cli/src/changes/design-events.ts packages/cli/src/changes/design-policy.ts packages/cli/src/schema/validate.ts",
+    "test:quality-coverage": "npm run build && vitest run --config vitest.quality.config.ts --coverage",
     "typecheck": "tsc --noEmit -p packages/cli/tsconfig.json && tsc --noEmit -p tests/routing/tsconfig.json",
     "build": "tsc -p packages/cli/tsconfig.json",
     "build:adapters": "node scripts/build-adapters.mjs",
@@ -24,11 +26,15 @@
     "url": "https://github.com/leopaisen-zb/leo-dev"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@types/node": "^22.15.3",
     "@types/proper-lockfile": "^4.1.4",
+    "@vitest/coverage-v8": "3.2.7",
     "ajv": "^8.17.1",
+    "eslint": "10.10.0",
     "proper-lockfile": "^4.1.2",
     "typescript": "^5.8.3",
+    "typescript-eslint": "8.70.0",
     "vitest": "^3.1.3",
     "yaml": "^2.7.1"
   },

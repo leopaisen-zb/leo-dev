@@ -8,7 +8,7 @@ import { environmentPolicyFingerprint, minimalEnvironment } from '../security/en
 import { normalizeRepositoryPath, repositoryPath, writeSurface } from '../security/paths.js';
 import { hasSecretShape, redact } from '../security/redact.js';
 import { reduceRunOutcome, type RunOutcome } from '../state/transition.js';
-import { Journal, JournalTailMismatchError } from '../state/journal.js';
+import { Journal, JournalTailMismatchError, type JournalObservation } from '../state/journal.js';
 import type { ChangeState, JournalEvent } from '../state/types.js';
 import { evidenceDirectory, evidenceFilePath, loadGateEvidence, publishGateEvidence, reserveGateEvidence, type EvidenceReservation, type GateEvidence, type PublishedGateEvidence } from './evidence.js';
 import { gateLauncherSource } from './launcher.js';
@@ -645,24 +645,24 @@ export class GateRunner {
    * Verifies a durable terminal attempt without starting or recovering a Gate.
    * Controller recovery consumes only this fully bound view of the raw phases.
    */
-  async inspectSettlement(request: GateSettlementInspectionRequest): Promise<VerifiedGateSettlement> {
-    return this.inspectSettlementJournal(request, false);
+  async inspectSettlement(request: GateSettlementInspectionRequest, observation?: JournalObservation): Promise<VerifiedGateSettlement> {
+    return this.inspectSettlementJournal(request, false, observation);
   }
 
   /**
    * Dry recovery inspection for a hash-verified journal prefix followed by one
    * incomplete frame. The incomplete frame is never treated as a Gate claim.
    */
-  async inspectSettlementBeforeIncompleteTail(request: GateSettlementInspectionRequest): Promise<VerifiedGateSettlement> {
-    return this.inspectSettlementJournal(request, true);
+  async inspectSettlementBeforeIncompleteTail(request: GateSettlementInspectionRequest, observation?: JournalObservation): Promise<VerifiedGateSettlement> {
+    return this.inspectSettlementJournal(request, true, observation);
   }
 
   /**
    * Verifies the durable non-terminal Gate prefix used by Controller's
    * thrown-indeterminate mapping. No process is started or recovered.
    */
-  async inspectIndeterminateAttempt(request: GateSettlementInspectionRequest, expectedPhaseEventHashes: readonly string[], allowIncompleteTail = false): Promise<VerifiedGateIndeterminateAttempt> {
-    const inspected = await this.inspectPreparedAttempt(request, allowIncompleteTail);
+  async inspectIndeterminateAttempt(request: GateSettlementInspectionRequest, expectedPhaseEventHashes: readonly string[], allowIncompleteTail = false, observation?: JournalObservation): Promise<VerifiedGateIndeterminateAttempt> {
+    const inspected = await this.inspectPreparedAttempt(request, allowIncompleteTail, observation);
     const { replay, preparedEvent, prepared, scope } = inspected;
     const phaseTypes = new Set(['gate.attempt.started', 'gate.attempt.released', 'gate.attempt.settled', 'gate.attempt.aborted', 'gate.attempt.denied']);
     const claims = replay.events.filter((event) => phaseTypes.has(event.type) && scope(event.payload));
@@ -696,14 +696,16 @@ export class GateRunner {
     return { attemptId: prepared.attemptId, operationFingerprint: prepared.operationFingerprint, inputTreeHash: prepared.inputTreeHash, phaseEventHashes };
   }
 
-  private async inspectPreparedAttempt(request: GateSettlementInspectionRequest, allowIncompleteTail: boolean): Promise<VerifiedPreparedAttempt> {
+  private async inspectPreparedAttempt(request: GateSettlementInspectionRequest, allowIncompleteTail: boolean, observation?: JournalObservation): Promise<VerifiedPreparedAttempt> {
     const canonicalRoot = await realpath(request.repositoryRoot);
     const repositoryIdentity = fingerprint({ canonicalRepositoryRoot: canonicalRoot });
     const gate = request.registry.get(request.gateId);
     const gateDefinitionHash = gateDefinitionFingerprint(gate);
     if (gateDefinitionHash !== request.expectedGateDefinitionHash) throw new GateRunError('RECOVERY_INVALID', 'The current reviewed gate definition is stale');
     const cwd = await repositoryPath(canonicalRoot, normalizeRepositoryPath(gate.cwd), true);
-    const replay = await this.journalFactory(runtimePaths(canonicalRoot, request.changeId).journal).replayStrict();
+    // Only Controller.observe supplies this already validated Journal.observe
+    // snapshot; its caller owns the before/after identity and digest guard.
+    const replay = observation ?? await this.journalFactory(runtimePaths(canonicalRoot, request.changeId).journal).replayStrict();
     if (replay.discardedIncompleteTail && !allowIncompleteTail) throw new GateRunError('RECOVERY_INVALID', 'The gate journal has an incomplete tail');
     const scope = (value: unknown): value is Partial<GateAttemptIdentity> => !!value && typeof value === 'object'
       && matchesAttemptScope(value as Partial<GateAttemptIdentity>, repositoryIdentity, request.runId, request)
@@ -732,8 +734,8 @@ export class GateRunner {
     return { replay, canonicalRoot, repositoryIdentity, gate, preparedEvent, prepared, scope };
   }
 
-  private async inspectSettlementJournal(request: GateSettlementInspectionRequest, allowIncompleteTail: boolean): Promise<VerifiedGateSettlement> {
-    const { replay, canonicalRoot, gate, preparedEvent, prepared, scope } = await this.inspectPreparedAttempt(request, allowIncompleteTail);
+  private async inspectSettlementJournal(request: GateSettlementInspectionRequest, allowIncompleteTail: boolean, observation?: JournalObservation): Promise<VerifiedGateSettlement> {
+    const { replay, canonicalRoot, gate, preparedEvent, prepared, scope } = await this.inspectPreparedAttempt(request, allowIncompleteTail, observation);
 
     const phaseTypes = new Set(['gate.attempt.started', 'gate.attempt.released', 'gate.attempt.settled', 'gate.attempt.aborted', 'gate.attempt.denied']);
     const claims = replay.events.filter((event) => phaseTypes.has(event.type) && scope(event.payload));

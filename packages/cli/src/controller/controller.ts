@@ -7,7 +7,9 @@ import { assertChangeId, assertContained } from '../changes/artifacts.js';
 import { completeControllerInitialization, initializeChangeWorkspace, readControllerInitAuthority, type ControllerInitAuthority } from '../changes/init.js';
 import { prepareSpecRevision, revisionApprovalContext, SpecRevisionConflictError, SpecRevisionError, validateSpecRevisionRecord, type RevisionAuthority, type RevisionRoute, type SpecRevisionRecord } from '../changes/spec-revision.js';
 import { TaskPlanError, validateTaskPlan } from '../changes/task-plan.js';
-import { captureDesignReviewContext, designSourceIsCurrent, normalizedPlanHash, routedRisk, type DesignReviewContext } from '../changes/design-policy.js';
+import { normalizedPlanHash, routedRisk, type DesignReviewContext } from '../changes/design-policy.js';
+import { DesignEventDecodeError, decodeDesignReviewEvent, latestDesignReviewContext, type DesignEventInput, type DesignReviewReceipt } from '../changes/design-events.js';
+import { DesignAdmissionError, approveDesignReview, assertFreshApprovedDesign, claimDesignReceiptPlan, decodeDesignAdmissionHistory, rejectDesignReview, requestDesignReview, validateClaimDesignEvidence, type AcquiredDesignReceipt, type DesignAdmissionHistory, type PreparedDesignReceipt } from '../changes/design-admission.js';
 import { archiveContext, contentHash, frozenSubjectCurrent, readRepositoryFile, readRepositoryJson, releaseProofHash, type ReleaseProof } from '../changes/release-proof.js';
 import { evidenceFilePath, GateEvidenceError, loadGateEvidence } from '../gates/evidence.js';
 import { GateRegistry, GateRegistryError, fingerprint, gateDefinitionFingerprint } from '../gates/registry.js';
@@ -19,7 +21,8 @@ import { runtimePaths } from '../runtime/paths.js';
 import { normalizeRepositoryPath } from '../security/paths.js';
 import { loadSchema } from '../schema/load.js';
 import { validateDocument, validateReceipt, validateTaskDefinition, type ReceiptKind } from '../schema/validate.js';
-import { Journal, JournalCorruptError, JournalTailMismatchError, recoverJournal } from '../state/journal.js';
+import { Journal, JournalCorruptError, JournalTailMismatchError, recoverJournal, type JournalObservation } from '../state/journal.js';
+import type { BoardBlocker, BoardColumn, BoardEvidence, BoardObservation, BoardTaskObservation, RecordedTeamObservation } from '../board/types.js';
 import type { Lease } from '../state/lease.js';
 import { ControllerBatchInvalidError, projectJournalEvents, recoverSnapshot, reduceJournal, type ControllerBatchOperation, type ControllerBatchPrepared, type LifecycleSnapshotState } from '../state/snapshot.js';
 import { reconcileUnknown, transitionChange, transitionRun, transitionTask, type TransitionResult } from '../state/transition.js';
@@ -77,6 +80,13 @@ type ReviewRecoveryPayload = SubmittedCandidate & {
   gateEvidenceRef: string;
 };
 type ReviewRecoveryRecord = { event: JournalEvent; payload: ReviewRecoveryPayload };
+type BoardReviewSelection = {
+  receiptEvent: JournalEvent;
+  submittedEvent: JournalEvent;
+  submitted: SubmittedCandidate;
+  claimed: Claimed;
+  candidate: CandidateBinding;
+};
 type UnknownContext = {
   runId: string;
   taskId: string;
@@ -661,6 +671,10 @@ export class Controller {
     }
     if (command !== 'init' && changeId) {
       const events = await this.readEvents(repositoryRoot, changeId, command === 'resume');
+      if (!receipt && command === 'transition' && options.scope === 'change' && options.to === 'spec-approved'
+        && reduceJournal(events).changeState === 'design-review' && options.receipt !== undefined) {
+        receipt = await this.readReceipt('design-review', stringOption(options, 'receipt')!);
+      }
       if (receipt) this.assertRevisionReceiptIdReserved(events, receipt);
       const lifecycle = reduceJournal(events);
       const latestRouted = latestPayload<Routed>(events, 'route.selected');
@@ -767,7 +781,7 @@ export class Controller {
     return result('DRY_RUN', { ...(routeDryRunState ?? {}), command, changeId: changeId ?? null, planned: true, plannedRecovery, writes: [] });
   }
 
-  private async readEvents(repositoryRoot: string, changeId: string, allowIncompleteTail = false, allowPendingGateHandoff = false, allowSpecDrift = false, allowPendingControllerBatch = false): Promise<JournalEvent[]> {
+  private async readEvents(repositoryRoot: string, changeId: string, allowIncompleteTail = false, allowPendingGateHandoff = false, allowSpecDrift = false, allowPendingControllerBatch = false, observed?: JournalObservation): Promise<JournalEvent[]> {
     const paths = this.paths(repositoryRoot, changeId);
     if (await readControllerInitAuthority(repositoryRoot, changeId)) throw new ControllerError(7, 'BLOCKED', 'Initialization has a pending durable authority intent; use resume');
     for (const path of [paths.runtime.directory, paths.runtime.journal]) {
@@ -776,7 +790,7 @@ export class Controller {
       catch (error: unknown) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new ControllerError(8, 'PREREQUISITE_FAILED', `Change workspace is incomplete or not initialized: ${relative(repositoryRoot, path)}`); throw error; }
       if (path === paths.runtime.directory ? !info.isDirectory() : !info.isFile()) throw new ControllerError(9, 'INTERNAL_ERROR', `Change workspace path has the wrong type: ${relative(repositoryRoot, path)}`);
     }
-    const replay = await new Journal(paths.runtime.journal).replayStrict();
+    const replay = observed ?? await new Journal(paths.runtime.journal).replayStrict();
     if (replay.discardedIncompleteTail && !allowIncompleteTail) throw new ControllerError(7, 'BLOCKED', 'Journal has an incomplete tail; use resume for ordinary lifecycle recovery or the reviewed Gate recovery/reconciliation seam');
     const projection = projectJournalEvents(replay.events);
     if (projection.pending && !allowPendingControllerBatch) throw new ControllerError(7, 'BLOCKED', 'Journal has a pending controller batch; use resume');
@@ -784,7 +798,7 @@ export class Controller {
     this.verifySpecRevisionHistory(repositoryRoot, changeId, committedRawEvents);
     const handoff = classifyGateHandoffs(replay.events);
     if (handoff.kind === 'invalid') throw new ControllerError(7, 'BLOCKED', handoff.reason);
-    await this.verifyGateHandoffHistory(repositoryRoot, changeId, replay.events, handoff, replay.discardedIncompleteTail);
+    await this.verifyGateHandoffHistory(repositoryRoot, changeId, replay.events, handoff, replay.discardedIncompleteTail, observed);
     if (handoff.kind === 'pending' && !allowPendingGateHandoff) throw new ControllerError(7, 'BLOCKED', 'Gate settlement has a pending Controller handoff; use resume');
     this.verifyReviewRecoveryHistory(committedRawEvents);
     for (const path of [paths.artifacts, paths.manifest, paths.spec, paths.tasks]) {
@@ -894,22 +908,17 @@ export class Controller {
   }
 
   private claimDesignEvidence(changeId: string, events: JournalEvent[], receipt: RecordValue, at: Date, fresh: boolean): DesignReviewContext {
-    const context = this.designReviewContext(events); const authority = currentAuthority(events);
-    if (routedRisk(routedTasks(events)) === 'lite' || !context || !authority || context.changeId !== changeId
-      || context.specHash !== authority.specHash || context.planHash !== normalizedPlanHash(routedTasks(events))
-      || hash(Buffer.from(context.designSourceBase64, 'base64')) !== context.designHash
-      || !validateReceipt('design-review', receipt, at).ok || receipt.verdict !== 'pass'
-      || Object.entries({ changeId, specHash: context.specHash, planHash: context.planHash, designHash: context.designHash, producerSession: context.producerSession }).some(([key, value]) => receipt[key] !== value)
-      || receipt.provenance === 'agent-asserted' || (receipt.provenance === 'platform-attested' && receipt.sessionId === context.producerSession)) {
-      throw new ControllerError(5, 'CONFLICT', 'Claim design evidence is invalid, expired, non-independent, or bound to stale authority at preparation');
-    }
-    if (fresh) {
-      this.assertRevisionReceiptIdReserved(events, receipt);
-      if (!events.some((event) => event.type === 'receipt.design-review.ingested') || this.receiptIdUsed(events, receipt.receiptId)) {
-        throw new ControllerError(5, 'CONFLICT', 'Fresh claim design receipt requires prior approval and an unused receipt ID');
-      }
-    }
-    return context;
+    if (fresh) this.assertRevisionReceiptIdReserved(events, receipt);
+    return this.designAdmission(() => validateClaimDesignEvidence({
+      changeId,
+      routes: routedTasks(events),
+      authority: currentAuthority(events),
+      history: this.designHistory(events),
+      receipt: receipt as DesignReviewReceipt,
+      at,
+      fresh,
+      receiptIdUsed: this.receiptIdUsed(events, receipt.receiptId),
+    }));
   }
 
   /** Re-derive admission from prior authority and the immutable inputs at preparation, never recovery wall time. */
@@ -950,9 +959,11 @@ export class Controller {
     let sources: Array<{ relativePath: string; sha256: string }> = [];
     if (receiptOperations.length > 1 || (batch.kind === 'claim-design-review' && !receiptOperation)) throw new ControllerError(5, 'CONFLICT', 'Claim must contain its single fresh design receipt');
     if (receiptOperation) {
-      const payload = record(receiptOperation.payload); const receipt = record(payload.receipt); const source = record(payload.receiptSource);
+      const decoded = this.decodedDesignEvent(receiptOperation);
+      if (!decoded || decoded.type !== 'receipt.design-review.ingested') throw new ControllerError(5, 'CONFLICT', 'Claim has an unrecognized design receipt event');
+      const receipt = decoded.payload.receipt; const source = decoded.payload.receiptSource;
       const context = this.claimDesignEvidence(changeId, prior, receipt, at, true);
-      if (typeof source.relativePath !== 'string' || typeof source.sha256 !== 'string' || typeof source.bytesBase64 !== 'string') throw new ControllerError(5, 'CONFLICT', 'Claim receipt source bytes are missing');
+      if (!source) throw new ControllerError(5, 'CONFLICT', 'Claim receipt source bytes are missing');
       const bytes = Buffer.from(source.bytesBase64, 'base64');
       let parsed: unknown;
       try { parsed = YAML.parse(bytes.toString('utf8')); }
@@ -961,7 +972,7 @@ export class Controller {
       plan.designReceipt = { receipt, source: { relativePath: source.relativePath, sha256: source.sha256, bytesBase64: source.bytesBase64 }, designSource: { relativePath: context.designPath, sha256: context.designHash } };
       sources = [plan.designReceipt.designSource, { relativePath: source.relativePath, sha256: source.sha256 }];
     } else if (routedRisk(routedTasks(prior)) !== 'lite') {
-      const receipt = latestPayload<{ receipt: RecordValue }>(prior, 'receipt.design-review.ingested')?.receipt;
+      const receipt = this.designHistory(prior).receipt;
       const context = this.claimDesignEvidence(changeId, prior, receipt ?? {}, at, false);
       sources = [{ relativePath: context.designPath, sha256: context.designHash }];
     }
@@ -1275,7 +1286,7 @@ export class Controller {
     return this.gateSettlementRequest(repositoryRoot, changeId, taskId, routed, claimed, registry, candidate);
   }
 
-  private async verifyStandaloneUnknown(repositoryRoot: string, changeId: string, rawEvents: JournalEvent[], logical: JournalEvent[], claim: GateResultClaim, allowIncompleteTail: boolean): Promise<void> {
+  private async verifyStandaloneUnknown(repositoryRoot: string, changeId: string, rawEvents: JournalEvent[], logical: JournalEvent[], claim: GateResultClaim, allowIncompleteTail: boolean, observation?: JournalObservation): Promise<void> {
     const { event, payload, batch } = claim;
     if (!batch || batch.kind !== 'unknown-outcome') throw new ControllerError(7, 'BLOCKED', 'Standalone unknown result has no durable unknown-outcome batch');
     const runId = String(payload.runId);
@@ -1316,7 +1327,7 @@ export class Controller {
       throw new ControllerError(7, 'BLOCKED', `Run ${runId} unknown context does not enumerate its exact durable Gate phase history`);
     }
     const request = await this.gateAuthorityRequest(repositoryRoot, changeId, taskId, routed, claimed, candidateForRun(logical, taskId, runId));
-    const verified = await new GateRunner().inspectIndeterminateAttempt(request, context.evidenceHashes, allowIncompleteTail);
+    const verified = await new GateRunner().inspectIndeterminateAttempt(request, context.evidenceHashes, allowIncompleteTail, observation);
     if (record(preparedEvent.payload).attemptId !== verified.attemptId || verified.operationFingerprint !== context.operationFingerprint || verified.inputTreeHash !== context.inputTreeHash) {
       throw new ControllerError(7, 'BLOCKED', `Run ${runId} unknown context does not match its verified Gate attempt`);
     }
@@ -1355,7 +1366,7 @@ export class Controller {
     }
   }
 
-  private async verifyGateHandoffHistory(repositoryRoot: string, changeId: string, rawEvents: JournalEvent[], handoff: Exclude<GateHandoffClassification, { kind: 'invalid' }>, allowIncompleteTail: boolean): Promise<void> {
+  private async verifyGateHandoffHistory(repositoryRoot: string, changeId: string, rawEvents: JournalEvent[], handoff: Exclude<GateHandoffClassification, { kind: 'invalid' }>, allowIncompleteTail: boolean, observation?: JournalObservation): Promise<void> {
     const logical = projectJournalEvents(rawEvents).events;
     const runner = new GateRunner();
     const verifyTerminal = async (terminal: GateTerminalClaim): Promise<VerifiedGateSettlement> => {
@@ -1369,8 +1380,8 @@ export class Controller {
       });
       const request = await this.gateAuthorityRequest(repositoryRoot, changeId, terminal.taskId, routed, claimed, candidateForRun(logical, terminal.taskId, terminal.runId));
       const verified = allowIncompleteTail
-        ? await runner.inspectSettlementBeforeIncompleteTail(request)
-        : await runner.inspectSettlement(request);
+        ? await runner.inspectSettlementBeforeIncompleteTail(request, observation)
+        : await runner.inspectSettlement(request, observation);
       if (verified.attemptId !== terminal.attemptId || verified.status !== terminal.status
         || fingerprint(verified.outcome) !== fingerprint(terminal.outcome) || verified.evidenceRef !== terminal.evidenceRef
         || verified.phaseEventHashes.at(-1) !== terminal.event.eventHash) {
@@ -1382,7 +1393,7 @@ export class Controller {
       await verifyTerminal(mapped.terminal);
     }
     if (handoff.kind === 'pending') await verifyTerminal(handoff.terminal);
-    for (const standalone of handoff.standalone) await this.verifyStandaloneUnknown(repositoryRoot, changeId, rawEvents, logical, standalone, allowIncompleteTail);
+    for (const standalone of handoff.standalone) await this.verifyStandaloneUnknown(repositoryRoot, changeId, rawEvents, logical, standalone, allowIncompleteTail, observation);
     const unknownResults = logical.filter((event) => event.type === 'controller.gate.result'
       && ['unknown', 'evidence-blocked-secret'].includes(String(record(event.payload).status)));
     const contextsByRun = new Map<string, JournalEvent[]>();
@@ -1404,11 +1415,39 @@ export class Controller {
     return { artifacts, manifest: join(artifacts, 'manifest.yaml'), spec: join(artifacts, 'spec.yaml'), tasks: join(artifacts, 'tasks.yaml'), runtime: runtimePaths(repositoryRoot, changeId) };
   }
 
-  private designReviewContext(events: JournalEvent[]): DesignReviewContext | undefined {
-    const value = latestPayload<DesignReviewContext>(events, 'controller.design.review.requested');
-    return value && typeof value.changeId === 'string' && typeof value.specHash === 'string' && typeof value.planHash === 'string'
-      && typeof value.designPath === 'string' && typeof value.designHash === 'string' && typeof value.designSourceBase64 === 'string'
-      && typeof value.producerSession === 'string' ? value : undefined;
+  private designHistory(events: JournalEvent[]): DesignAdmissionHistory {
+    try { return decodeDesignAdmissionHistory(events); }
+    catch (error) { this.throwMalformedDesignEvent(error); }
+  }
+
+  private designContext(events: JournalEvent[]): DesignReviewContext | undefined {
+    try { return latestDesignReviewContext(events); }
+    catch (error) { this.throwMalformedDesignEvent(error); }
+  }
+
+  private decodedDesignEvent(event: DesignEventInput) {
+    try { return decodeDesignReviewEvent(event); }
+    catch (error) { this.throwMalformedDesignEvent(error); }
+  }
+
+  private throwMalformedDesignEvent(error: unknown): never {
+    if (error instanceof DesignEventDecodeError) throw new ControllerError(7, 'BLOCKED', error.message);
+    throw error;
+  }
+
+  private designAdmission<T>(operation: () => T): T {
+    try { return operation(); }
+    catch (error) { this.throwDesignAdmissionError(error); }
+  }
+
+  private async designAdmissionAsync<T>(operation: () => Promise<T>): Promise<T> {
+    try { return await operation(); }
+    catch (error) { this.throwDesignAdmissionError(error); }
+  }
+
+  private throwDesignAdmissionError(error: unknown): never {
+    if (error instanceof DesignAdmissionError) throw new ControllerError(error.exitCode, error.publicCode, error.message);
+    throw error;
   }
 
   private receiptIdUsed(events: JournalEvent[], receiptId: unknown): boolean {
@@ -1430,68 +1469,50 @@ export class Controller {
     throw new ControllerError(5, 'CONFLICT', 'Gate approval receipt ID has already been consumed for another binding; issuer was not authenticated');
   }
 
-  private async assertFreshApprovedDesign(repositoryRoot: string, changeId: string, events: JournalEvent[]): Promise<DesignReviewContext> {
-    const routes = routedTasks(events); const risk = routedRisk(routes);
-    if (risk === 'lite') throw new ControllerError(7, 'BLOCKED', 'Lite changes do not have a non-Lite design approval context');
-    const context = this.designReviewContext(events);
-    const receipt = latestPayload<{ receipt: RecordValue }>(events, 'receipt.design-review.ingested')?.receipt;
-    const authority = currentAuthority(events);
-    if (!context || !receipt || !authority || context.changeId !== changeId || context.specHash !== authority.specHash || context.planHash !== normalizedPlanHash(routes)) {
-      throw new ControllerError(5, 'CONFLICT', 'Non-Lite design evidence is absent or bound to stale authority');
-    }
-    if (!await designSourceIsCurrent(repositoryRoot, context)) throw new ControllerError(5, 'CONFLICT', 'Design source has drifted from its immutable reviewed binding');
-    const validation = validateReceipt('design-review', receipt);
-    if (!validation.ok || receipt.verdict !== 'pass') throw new ControllerError(5, 'CONFLICT', 'Design review receipt is expired, invalid, or non-passing');
-    return context;
+  private async acquireDesignReceipt(repositoryRoot: string, reference: string): Promise<AcquiredDesignReceipt> {
+    const absolutePath = resolve(reference);
+    const source: { bytes?: Buffer } = {};
+    const receipt = await this.readReceipt('design-review', reference, source);
+    if (!source.bytes) throw new ControllerError(7, 'BLOCKED', 'Fresh claim design review has no immutable approval context or source bytes');
+    return { absolutePath, relativePath: relative(repositoryRoot, absolutePath).split(sep).join('/'), bytes: source.bytes, receipt: receipt as DesignReviewReceipt };
   }
 
-  private async designTransitionPlan(repositoryRoot: string, changeId: string, to: string, events: JournalEvent[], options: CommandOptions, source?: { bytes?: Buffer }): Promise<{ context?: DesignReviewContext; receipt?: RecordValue }> {
-    const routes = routedTasks(events); const risk = routedRisk(routes); const authority = currentAuthority(events);
-    if (risk === 'lite') throw new ControllerError(3, 'TRANSITION_FORBIDDEN', 'Design transitions are only available for Standard or Full routes');
-    if (!authority) throw new ControllerError(7, 'BLOCKED', 'Design transition requires current specification authority');
-    if (to === 'design-review') {
-      const design = stringOption(options, 'design')!; const session = stringOption(options, 'session')!;
-      try { return { context: await captureDesignReviewContext(repositoryRoot, { changeId, specHash: authority.specHash, planHash: normalizedPlanHash(routes), design, producerSession: session }) }; }
-      catch (error) { throw new ControllerError(2, 'VALIDATION_ERROR', error instanceof Error ? error.message : String(error)); }
-    }
-    const context = this.designReviewContext(events);
-    if (!context || context.changeId !== changeId || context.specHash !== authority.specHash || context.planHash !== normalizedPlanHash(routes) || !await designSourceIsCurrent(repositoryRoot, context)) {
-      throw new ControllerError(5, 'CONFLICT', 'Design review source or authority has drifted');
-    }
-    const receipt = await this.readReceipt('design-review', stringOption(options, 'receipt')!, source);
-    if (this.receiptIdUsed(events, receipt.receiptId)) throw new ControllerError(5, 'CONFLICT', 'Design review receipt ID has already been consumed; issuer was not authenticated');
-    if (receipt.verdict !== 'pass' || Object.entries({ changeId: context.changeId, specHash: context.specHash, planHash: context.planHash, designHash: context.designHash, producerSession: context.producerSession }).some(([key, value]) => receipt[key] !== value)) {
-      throw new ControllerError(5, 'CONFLICT', 'Design review receipt does not exactly match the current immutable context; issuer was not authenticated');
-    }
-    if (receipt.provenance === 'agent-asserted' || (receipt.provenance === 'platform-attested' && receipt.sessionId === context.producerSession)) {
-      throw new ControllerError(5, 'CONFLICT', 'Design review is not independent; issuer was not authenticated');
-    }
-    return { context, receipt };
-  }
-
-  private async claimDesignReceiptPlan(repositoryRoot: string, changeId: string, events: JournalEvent[], reference: string): Promise<ClaimDesignReceipt> {
-    if (routedRisk(routedTasks(events)) === 'lite') throw new ControllerError(3, 'TRANSITION_FORBIDDEN', 'Design review receipts are only available for Standard or Full routes');
-    if (!events.some((event) => event.type === 'receipt.design-review.ingested')) {
-      throw new ControllerError(5, 'CONFLICT', 'Fresh claim design review requires existing approved design history');
-    }
-    let absolute: string;
+  private async prepareContainedDesignReceipt(repositoryRoot: string, reference: string): Promise<PreparedDesignReceipt> {
+    let absolutePath: string;
     try {
-      absolute = await realpath(resolve(repositoryRoot, reference));
-      await assertContained(repositoryRoot, absolute);
+      absolutePath = await realpath(resolve(repositoryRoot, reference));
+      await assertContained(repositoryRoot, absolutePath);
     } catch {
       throw new ControllerError(2, 'VALIDATION_ERROR', 'Design review receipt must be a readable repository-contained file');
     }
+    return { absolutePath, relativePath: relative(repositoryRoot, absolutePath).split(sep).join('/') };
+  }
+
+  private async acquirePreparedDesignReceipt(prepared: PreparedDesignReceipt): Promise<AcquiredDesignReceipt> {
     const source: { bytes?: Buffer } = {};
-    const planned = await this.designTransitionPlan(repositoryRoot, changeId, 'design-approved', events, { receipt: absolute }, source);
-    const receipt = planned.receipt;
-    const context = planned.context;
-    if (!receipt || !context || !source.bytes) throw new ControllerError(7, 'BLOCKED', 'Fresh claim design review has no immutable approval context or source bytes');
-    this.assertRevisionReceiptIdReserved(events, receipt);
-    return {
-      receipt,
-      source: { relativePath: relative(repositoryRoot, absolute).split(sep).join('/'), sha256: hash(source.bytes), bytesBase64: source.bytes.toString('base64') },
-      designSource: { relativePath: context.designPath, sha256: context.designHash },
-    };
+    const receipt = await this.readReceipt('design-review', prepared.absolutePath, source);
+    if (!source.bytes) throw new ControllerError(7, 'BLOCKED', 'Fresh claim design review has no immutable approval context or source bytes');
+    return { ...prepared, bytes: source.bytes, receipt: receipt as DesignReviewReceipt };
+  }
+
+  private async planDesignTransition(repositoryRoot: string, changeId: string, to: string, events: JournalEvent[], options: CommandOptions): Promise<{ context?: DesignReviewContext; receipt?: RecordValue }> {
+    const routes = routedTasks(events); const authority = currentAuthority(events);
+    if (to === 'design-review') {
+      const context = await this.designAdmissionAsync(() => requestDesignReview({ repositoryRoot, changeId, routes, authority, acquireRequest: () => ({ design: stringOption(options, 'design')!, producerSession: stringOption(options, 'session')! }) }));
+      return { context };
+    }
+    if (to === 'spec-approved') {
+      const planned = await this.designAdmissionAsync(() => rejectDesignReview({ repositoryRoot, changeId, routes, authority, context: () => this.designContext(events), acquireReceipt: () => this.acquireDesignReceipt(repositoryRoot, stringOption(options, 'receipt')!), receiptIdUsed: (receiptId) => this.receiptIdUsed(events, receiptId) }));
+      return { context: planned.context, receipt: planned.acquired.receipt };
+    }
+    const planned = await this.designAdmissionAsync(() => approveDesignReview({ repositoryRoot, changeId, routes, authority, context: () => this.designContext(events), acquireReceipt: () => this.acquireDesignReceipt(repositoryRoot, stringOption(options, 'receipt')!), receiptIdUsed: (receiptId) => this.receiptIdUsed(events, receiptId) }));
+    return { context: planned.context, receipt: planned.acquired.receipt };
+  }
+
+  private async planFreshClaimDesignReceipt(repositoryRoot: string, changeId: string, events: JournalEvent[], reference: string): Promise<ClaimDesignReceipt> {
+    const receipt = await this.designAdmissionAsync(() => claimDesignReceiptPlan({ repositoryRoot, changeId, routes: routedTasks(events), authority: currentAuthority(events), hasPriorReceipt: () => events.some((event) => event.type === 'receipt.design-review.ingested'), context: () => this.designContext(events), prepareReceipt: () => this.prepareContainedDesignReceipt(repositoryRoot, reference), acquireReceipt: (prepared) => this.acquirePreparedDesignReceipt(prepared), receiptIdUsed: (receiptId) => this.receiptIdUsed(events, receiptId) }));
+    this.assertRevisionReceiptIdReserved(events, receipt.receipt);
+    return receipt;
   }
 
   private async releaseProofPlan(repositoryRoot: string, changeId: string, events: JournalEvent[]): Promise<ReleaseProof> {
@@ -1622,8 +1643,8 @@ export class Controller {
       } catch { gateRegistry = false; }
     }
     const risk = routedRisk(routes);
-    const design = (to === 'design-review' || to === 'design-approved') ? await this.designTransitionPlan(repositoryRoot, changeId, to, events, options) : undefined;
-    if (to === 'task-ready' && risk !== 'lite') await this.assertFreshApprovedDesign(repositoryRoot, changeId, events);
+    const design = (to === 'design-review' || to === 'design-approved' || (from === 'design-review' && to === 'spec-approved')) ? await this.planDesignTransition(repositoryRoot, changeId, to, events, options) : undefined;
+    if (to === 'task-ready' && risk !== 'lite') await this.designAdmissionAsync(() => assertFreshApprovedDesign({ repositoryRoot, changeId, routes, authority: currentAuthority(events), history: this.designHistory(events) }));
     const decision = transitionChange(from, to, {
       riskRecorded: routes.length > 0,
       specResolves: !!initialized,
@@ -1637,6 +1658,7 @@ export class Controller {
       risk,
       designArtifactResolves: to === 'design-review' ? !!design?.context : undefined,
       reviewReceiptMatches: to === 'design-approved' ? !!design?.receipt : undefined,
+      rejectReviewReceiptMatches: from === 'design-review' && to === 'spec-approved' ? !!design?.receipt : undefined,
       dependenciesDone: routes.length > 0 && routes.filter((routed) => routed.task.dependsOn.length === 0).every((routed) => lifecycle.tasks[routed.task.id]?.state === 'ready'),
       journalCommitted: events.length > 0,
       allTasksDone: routes.length > 0 && routes.every((routed) => lifecycle.tasks[routed.task.id]?.state === 'done'),
@@ -1798,6 +1820,26 @@ export class Controller {
     return recovery ? { event: recovery, payload: record(recovery.payload) as ReviewRecoveryPayload } : undefined;
   }
 
+  private reviewRecoveryReceiptBinding(events: JournalEvent[], submittedEvent: JournalEvent, receipt: RecordValue, receiptBoundary = events.length): {
+    recovery?: ReviewRecoveryRecord;
+    problem?: 'unexpected-recovery' | 'recovery-mismatch';
+  } {
+    const recoveryEvents = events.filter((event) => event.type === 'controller.review.recovered' && event.taskId === submittedEvent.taskId
+      && record(event.payload).submitEventHash === submittedEvent.eventHash);
+    if (recoveryEvents.length > 1) return { problem: 'recovery-mismatch' };
+    const recoveryEvent = recoveryEvents[0];
+    if (!recoveryEvent) return receipt.recoveryId === undefined ? {} : { problem: 'unexpected-recovery' };
+    const recovery = { event: recoveryEvent, payload: record(recoveryEvent.payload) as ReviewRecoveryPayload };
+    const submittedIndex = events.indexOf(submittedEvent);
+    const recoveryIndex = events.indexOf(recoveryEvent);
+    const receiptTimestamp = Date.parse(String(receipt.timestamp));
+    if (submittedIndex < 0 || recoveryIndex <= submittedIndex || recoveryIndex >= receiptBoundary || receipt.recoveryId !== recovery.payload.recoveryId
+      || !Number.isFinite(receiptTimestamp) || receiptTimestamp < Date.parse(recoveryEvent.timestamp)) {
+      return { problem: 'recovery-mismatch' };
+    }
+    return { recovery };
+  }
+
   private async reviewRecoveryPlan(repositoryRoot: string, changeId: string, taskId: string, events: JournalEvent[], recoveredAt: Date): Promise<{
     binding: Omit<ReviewRecoveryPayload, 'schemaVersion' | 'recoveryId'>;
     existing?: ReviewRecoveryRecord;
@@ -1837,18 +1879,20 @@ export class Controller {
     }
     const routed = routedTask(events, taskId);
     const claimed = latestTaskPayload<Claimed>(events, 'run.claimed', taskId);
-    const submitted = latestTaskPayload<SubmittedCandidate>(events, 'controller.submit.accepted', taskId);
+    const submittedEvent = events.filter((event) => event.type === 'controller.submit.accepted' && event.taskId === taskId).at(-1);
+    const submitted = submittedEvent ? record(submittedEvent.payload) as SubmittedCandidate : undefined;
     const candidate = claimed ? candidateForRun(events, taskId, claimed.runId) : undefined;
     if (!routed || !claimed || !submitted || lifecycle.tasks[taskId]?.state !== 'review-required') throw new ControllerError(7, 'BLOCKED', 'Task is not awaiting a committed submitted candidate review', lifecycle);
     if (submitted.runId !== claimed.runId || submitted.taskId !== taskId || submitted.taskRevision !== routed.task.revision || submitted.leaseGeneration !== claimed.lease.generation) throw new ControllerError(5, 'CONFLICT', 'Submitted candidate does not match the current Run/task/lease binding', lifecycle);
     if (!candidate || candidate.treeHash !== submitted.treeHash || candidate.taskHash !== submitted.taskHash || candidate.specHash !== submitted.specHash) throw new ControllerError(5, 'CONFLICT', 'Submitted candidate does not match the durable candidate binding', lifecycle);
     const receiptMatches = Object.entries(submitted).every(([key, value]) => receipt[key] === value);
     if (!receiptMatches) throw new ControllerError(5, 'CONFLICT', 'Review receipt is stale or does not match the submitted candidate; issuer was not authenticated', lifecycle);
-    const recovery = this.currentReviewRecovery(events, taskId);
-    if (!recovery && receipt.recoveryId !== undefined) throw new ControllerError(5, 'CONFLICT', 'Review receipt claims a recovery that was never committed; issuer was not authenticated', lifecycle);
-    if (recovery && (receipt.recoveryId !== recovery.payload.recoveryId || Date.parse(String(receipt.timestamp)) < Date.parse(recovery.event.timestamp))) {
+    const recoveryBinding = this.reviewRecoveryReceiptBinding(events, submittedEvent!, receipt);
+    if (recoveryBinding.problem === 'unexpected-recovery') throw new ControllerError(5, 'CONFLICT', 'Review receipt claims a recovery that was never committed; issuer was not authenticated', lifecycle);
+    if (recoveryBinding.problem === 'recovery-mismatch') {
       throw new ControllerError(5, 'CONFLICT', 'Review receipt does not match the current recovery epoch; issuer was not authenticated', lifecycle);
     }
+    const recovery = recoveryBinding.recovery;
     const projectedLease = lifecycle.leases[taskId];
     if (!projectedLease?.active || projectedLease.generation !== claimed.lease.generation || (!recovery && Date.parse(claimed.lease.expiresAt) <= Date.now())) throw new ControllerError(5, 'CONFLICT', 'Submitted candidate lease is no longer current', lifecycle);
     if ((await canonicalTreeHash(repositoryRoot)).hash !== submitted.treeHash) throw new ControllerError(5, 'CONFLICT', 'Controlled tree has drifted from the submitted Gate-bound candidate', lifecycle);
@@ -1874,10 +1918,11 @@ export class Controller {
     return { provenance, effectiveRisk, independentSession, fullAssessments: routed.task.risk === 'full' };
   }
 
-  private fullReviewAssessments(receipt: RecordValue, submitted: SubmittedCandidate, claimed: Claimed, events: JournalEvent[]): boolean {
+  private fullReviewAssessments(receipt: RecordValue, submitted: SubmittedCandidate, claimed: Claimed, events: JournalEvent[], evaluationTime = new Date()): boolean {
     const assessments: RecordValue[] = Array.isArray(receipt.assessments) ? receipt.assessments.map(record) : [];
+    const evaluatedAt = evaluationTime.getTime();
     if (assessments.length !== 3 || new Set(assessments.map((assessment) => assessment.area)).size !== 3
-      || !['architecture', 'security', 'nfr'].every((area) => assessments.some((assessment) => assessment.area === area))) return false;
+      || !Number.isFinite(evaluatedAt) || !['architecture', 'security', 'nfr'].every((area) => assessments.some((assessment) => assessment.area === area))) return false;
     const ids = new Set<string>([String(receipt.receiptId)]); const sessions = new Set<string>();
     return assessments.every((assessment) => {
       const id = assessment.receiptId; const provenance = assessment.provenance;
@@ -1886,8 +1931,8 @@ export class Controller {
       if (!['platform-attested', 'human-confirmed'].includes(String(provenance)) || (assessment.verdict !== 'pass' && !(receipt.verdict === 'reject' && assessment.verdict === 'reject'))
         || typeof assessment.actorLabel !== 'string' || !assessment.actorLabel || typeof assessment.findingsHash !== 'string'
         || !/^[a-f0-9]{64}$/.test(assessment.findingsHash) || !Number.isFinite(Date.parse(String(assessment.timestamp)))
-        || !Number.isFinite(Date.parse(String(assessment.expiresAt))) || Date.parse(String(assessment.expiresAt)) <= Date.now()
-        || Date.parse(String(assessment.timestamp)) > Date.now()
+        || !Number.isFinite(Date.parse(String(assessment.expiresAt))) || Date.parse(String(assessment.expiresAt)) <= evaluatedAt
+        || Date.parse(String(assessment.timestamp)) > evaluatedAt
         || Date.parse(String(assessment.timestamp)) >= Date.parse(String(assessment.expiresAt))) return false;
       if (Object.entries(submitted).some(([key, value]) => assessment[key] !== value)) return false;
       if (provenance === 'platform-attested') {
@@ -2022,7 +2067,10 @@ export class Controller {
     }
     const recovery = submitted ? this.currentReviewRecovery(currentEvents, submitted.taskId) : undefined;
     const reviewContext = submitted ? { ...submitted, ...(recovery ? { recoveryId: recovery.payload.recoveryId } : {}) } : null;
-    const designReviewContext = this.designReviewContext(replay) ?? null;
+    // Status is a durable-history consumer too: validate both decoded event types,
+    // while intentionally exposing only the request context in public JSON.
+    const designHistory = this.designHistory(replay);
+    const designReviewContext = designHistory.context ?? null;
     const release = latestPayload<ReleaseRecord>(replay, 'controller.release.evidence.recorded');
     const reviewRecovery = recovery ? {
       recoveryId: recovery.payload.recoveryId,
@@ -2257,6 +2305,192 @@ export class Controller {
     return result('STATUS', await this.state(repositoryRoot, changeId));
   }
 
+  private boardColumn(state: string): BoardColumn {
+    if (state === 'done') return 'done';
+    if (state === 'review-required' || state === 'reviewing') return 'review';
+    if (state === 'pending' || state === 'ready') return 'queued';
+    return 'active';
+  }
+
+  private async boardCandidateStatus(repositoryRoot: string, authority: ReturnType<typeof currentAuthority>, route: Routed, claimed: Claimed | undefined, candidate: CandidateBinding | undefined): Promise<'unknown' | 'matches' | 'drifted'> {
+    if (!authority || !claimed || !candidate || claimed.lease.taskId !== route.task.id || candidate.runId !== claimed.runId
+      || claimed.lease.taskRevision !== route.task.revision || candidate.taskId !== route.task.id || candidate.taskRevision !== route.task.revision || candidate.leaseGeneration !== claimed.lease.generation || candidate.claimInputTreeHash !== claimed.lease.inputTreeHash
+      || candidate.taskHash !== route.taskHash || candidate.specHash !== authority.specHash) return 'unknown';
+    try { return (await canonicalTreeHash(repositoryRoot)).hash === candidate.treeHash ? 'matches' : 'drifted'; }
+    catch { return 'unknown'; }
+  }
+
+  private async boardEvidenceCandidateStatus(repositoryRoot: string, authority: ReturnType<typeof currentAuthority>, route: Routed, events: JournalEvent[], event: JournalEvent, payload: RecordValue): Promise<{ runId?: string; candidate?: CandidateBinding; status: 'unknown' | 'matches' | 'drifted' }> {
+    const runId = typeof payload.runId === 'string' ? payload.runId : undefined;
+    if (!runId || event.taskId !== route.task.id || event.taskRevision !== route.task.revision || !Number.isSafeInteger(event.leaseGeneration)
+      || payload.taskId !== route.task.id || payload.taskRevision !== route.task.revision || payload.leaseGeneration !== event.leaseGeneration) throw new ControllerError(7, 'BLOCKED', 'Recorded evidence does not bind its current task/revision/lease envelope');
+    const claimEvent = events.filter((candidate) => candidate.type === 'run.claimed' && candidate.taskId === route.task.id && record(candidate.payload).runId === runId).at(-1);
+    const claimed = claimEvent ? record(claimEvent.payload) as Claimed : undefined;
+    const candidate = candidateForRun(events, route.task.id, runId);
+    if (!claimed || !candidate) throw new ControllerError(7, 'BLOCKED', 'Recorded evidence has no durable claimed candidate binding');
+    this.assertCandidateBinding(candidate, route.task.id, route, claimed, events);
+    return { runId, ...(candidate ? { candidate } : {}), status: await this.boardCandidateStatus(repositoryRoot, authority, route, claimed, candidate) };
+  }
+
+  private assertBoardSubmitBinding(route: Routed, events: JournalEvent[], submitted: SubmittedCandidate): { claimed: Claimed; candidate: CandidateBinding } {
+    const claimEvent = events.filter((event) => event.type === 'run.claimed' && event.taskId === route.task.id && record(event.payload).runId === submitted.runId).at(-1);
+    const claimed = claimEvent ? record(claimEvent.payload) as Claimed : undefined;
+    const candidate = candidateForRun(events, route.task.id, submitted.runId);
+    if (!claimed || !candidate || submitted.taskId !== route.task.id || submitted.taskRevision !== route.task.revision || submitted.leaseGeneration !== claimed.lease.generation
+      || candidate.treeHash !== submitted.treeHash || candidate.taskHash !== submitted.taskHash || candidate.specHash !== submitted.specHash) {
+      throw new ControllerError(7, 'BLOCKED', 'Recorded review submission does not bind its claimed candidate');
+    }
+    this.assertCandidateBinding(candidate, route.task.id, route, claimed, events);
+    return { claimed, candidate };
+  }
+
+  private validateBoardReviewHistory(routes: Routed[], events: JournalEvent[], currentEvents: JournalEvent[]): Map<JournalEvent, BoardReviewSelection> {
+    const routesByTask = new Map(routes.map((route) => [route.task.id, route]));
+    const selections = new Map<JournalEvent, BoardReviewSelection>();
+    for (const receiptEvent of currentEvents.filter((event) => event.type === 'receipt.review.ingested')) {
+      const route = receiptEvent.taskId ? routesByTask.get(receiptEvent.taskId) : undefined;
+      if (!route || receiptEvent.taskRevision !== route.task.revision || !Number.isSafeInteger(receiptEvent.leaseGeneration)) {
+        throw new ControllerError(7, 'BLOCKED', 'Recorded review receipt has no current task/revision/lease envelope');
+      }
+      const receipt = record(record(receiptEvent.payload).receipt);
+      const receiptValidation = validateReceipt('review', receipt, new Date(receiptEvent.timestamp));
+      if (!receiptValidation.ok) throw new ControllerError(7, 'BLOCKED', 'Recorded review receipt is malformed or was not valid when ingested');
+      const runId = receipt.runId;
+      if (typeof runId !== 'string' || !runId) throw new ControllerError(7, 'BLOCKED', 'Recorded review receipt has no Run binding');
+      const submittedEvents = currentEvents.filter((event) => event.type === 'controller.submit.accepted' && record(event.payload).runId === runId);
+      if (submittedEvents.length !== 1) throw new ControllerError(7, 'BLOCKED', 'Recorded review receipt does not bind exactly one current-revision submitted candidate');
+      const submittedEvent = submittedEvents[0]!;
+      const submitted = record(submittedEvent.payload) as SubmittedCandidate;
+      const candidateEvents = currentEvents.filter((event) => event.type === 'controller.candidate.registered' && record(event.payload).runId === runId);
+      const claimEvents = currentEvents.filter((event) => event.type === 'run.claimed' && record(event.payload).runId === runId);
+      if (candidateEvents.length !== 1 || claimEvents.length !== 1) throw new ControllerError(7, 'BLOCKED', 'Recorded review receipt lacks a unique durable claim/candidate sequence');
+      const candidateEvent = candidateEvents[0]!;
+      const claimedEvent = claimEvents[0]!;
+      const candidate = record(candidateEvent.payload) as CandidateBinding;
+      const claimed = record(claimedEvent.payload) as Claimed;
+      this.assertCandidateBinding(candidate, route.task.id, route, claimed, events);
+      const claimedIndex = currentEvents.indexOf(claimedEvent);
+      const candidateIndex = currentEvents.indexOf(candidateEvent);
+      const submittedIndex = currentEvents.indexOf(submittedEvent);
+      const receiptIndex = currentEvents.indexOf(receiptEvent);
+      const ordered = claimedIndex < candidateIndex && candidateIndex < submittedIndex && submittedIndex < receiptIndex;
+      const exactEnvelopes = [claimedEvent, candidateEvent, submittedEvent, receiptEvent].every((event) => event.taskId === route.task.id
+        && event.taskRevision === route.task.revision && event.leaseGeneration === claimed.lease.generation);
+      if (!ordered || !exactEnvelopes || claimed.lease.taskId !== route.task.id || claimed.lease.taskRevision !== route.task.revision
+        || submitted.runId !== claimed.runId || submitted.taskId !== route.task.id || submitted.taskRevision !== route.task.revision || submitted.leaseGeneration !== claimed.lease.generation
+        || candidate.treeHash !== submitted.treeHash || candidate.taskHash !== submitted.taskHash || candidate.specHash !== submitted.specHash
+        || receiptEvent.taskRevision !== submittedEvent.taskRevision || receiptEvent.leaseGeneration !== submittedEvent.leaseGeneration
+        || Object.entries(submitted).some(([key, value]) => receipt[key] !== value)) {
+        throw new ControllerError(7, 'BLOCKED', 'Recorded review receipt does not exactly bind its submitted candidate');
+      }
+      const strictPrefix = events.slice(0, events.indexOf(receiptEvent));
+      if (this.receiptIdUsed(strictPrefix, receipt.receiptId)) throw new ControllerError(7, 'BLOCKED', 'Recorded review receipt ID was already consumed');
+      if (this.reviewRecoveryReceiptBinding(events, submittedEvent, receipt, events.indexOf(receiptEvent)).problem) {
+        throw new ControllerError(7, 'BLOCKED', 'Recorded review receipt does not match its submitted candidate recovery epoch');
+      }
+      const provenance = receipt.provenance as 'platform-attested' | 'human-confirmed' | 'agent-asserted';
+      const integration = route.task.role === 'integration';
+      const independentSession = provenance === 'human-confirmed' || (typeof claimed.sessionId === 'string' && typeof receipt.sessionId === 'string' && claimed.sessionId !== receipt.sessionId);
+      if (integration && (provenance === 'agent-asserted' || !independentSession)) throw new ControllerError(7, 'BLOCKED', 'Recorded integration review lacks its required independent provenance');
+      const reviewing = transitionTask('review-required', 'reviewing', { risk: integration ? (route.task.risk === 'full' ? 'full' : 'standard') : route.task.risk, reviewSessionAccepted: true, reviewProvenance: provenance, independentSession });
+      if (!reviewing.ok || (route.task.risk === 'full' && !this.fullReviewAssessments(receipt, submitted, claimed, strictPrefix, new Date(receiptEvent.timestamp)))) {
+        throw new ControllerError(7, 'BLOCKED', 'Recorded review receipt does not satisfy the recorded review policy');
+      }
+      if (selections.has(submittedEvent)) throw new ControllerError(7, 'BLOCKED', 'Recorded review history has multiple receipts for one submitted candidate');
+      selections.set(submittedEvent, { receiptEvent, submittedEvent, submitted, claimed, candidate });
+    }
+    return selections;
+  }
+
+  private async boardObservationState(repositoryRoot: string, changeId: string, events: JournalEvent[]): Promise<Omit<BoardObservation, 'schemaVersion' | 'observedAt' | 'repositoryRoot' | 'changeId' | 'availability' | 'hostLiveStatus'>> {
+    if (events.some((event) => event.changeId !== changeId)) throw new ControllerError(7, 'BLOCKED', 'Observed journal contains an event for a different change');
+    const lifecycle = reduceJournal(events);
+    const authority = currentAuthority(events);
+    if (!authority) throw new ControllerError(7, 'BLOCKED', 'Observation requires initialized change authority');
+    const epoch = events.reduce((latest, event, index) => event.type === 'controller.spec.revised' ? index + 1 : latest, 0);
+    const currentEvents = events.slice(epoch);
+    const validatedReviews = this.validateBoardReviewHistory(routedTasks(events), events, currentEvents);
+    const tasks: BoardTaskObservation[] = [];
+    for (const route of routedTasks(events)) {
+      const taskId = route.task.id;
+      const task = lifecycle.tasks[taskId];
+      const claimedEvent = currentEvents.filter((event) => event.type === 'run.claimed' && event.taskId === taskId).at(-1);
+      const claimed = claimedEvent ? record(claimedEvent.payload) as Claimed : undefined;
+      const gateEvent = currentEvents.filter((event) => event.type === 'controller.gate.result' && event.taskId === taskId).at(-1);
+      const gatePayload = gateEvent ? record(gateEvent.payload) : {};
+      const submittedEvent = currentEvents.filter((event) => event.type === 'controller.submit.accepted' && event.taskId === taskId).at(-1);
+      const submitted = submittedEvent ? record(submittedEvent.payload) as SubmittedCandidate : undefined;
+      const gateBinding = gateEvent ? await this.boardEvidenceCandidateStatus(repositoryRoot, authority, route, events, gateEvent, gatePayload) : undefined;
+      const gate: BoardEvidence | null = gateEvent ? {
+        kind: 'gate', status: typeof gatePayload.status === 'string' ? gatePayload.status : 'recorded',
+        ...(gateBinding?.runId ? { runId: gateBinding.runId } : {}),
+        ...(gateBinding?.candidate ? { candidateTreeHash: gateBinding.candidate.treeHash } : {}),
+        ...(typeof gatePayload.evidenceRef === 'string' ? { evidenceRef: gatePayload.evidenceRef } : {}),
+        recordedAt: gateEvent.timestamp, currentCandidate: gateBinding?.status ?? 'unknown',
+      } : null;
+      const validatedReview = submittedEvent ? validatedReviews.get(submittedEvent) : undefined;
+      const submitBinding = submittedEvent && submitted ? validatedReview ?? this.assertBoardSubmitBinding(route, events, submitted) : undefined;
+      const reviewReceipt = validatedReview?.receiptEvent;
+      const reviewPayload = reviewReceipt ? record(record(reviewReceipt.payload).receipt) : undefined;
+      const reviewBinding = submittedEvent && submitted && submitBinding ? {
+        runId: submitted.runId, candidate: submitBinding.candidate,
+        status: await this.boardCandidateStatus(repositoryRoot, authority, route, submitBinding.claimed, submitBinding.candidate),
+      } : undefined;
+      const review: BoardEvidence | null = submittedEvent ? {
+        kind: 'review', status: typeof reviewPayload?.verdict === 'string' ? reviewPayload.verdict : 'submitted', runId: reviewBinding?.runId,
+        candidateTreeHash: reviewBinding?.candidate?.treeHash, ...(typeof reviewPayload?.receiptId === 'string' ? { evidenceRef: `receipt:${reviewPayload.receiptId}` } : {}),
+        recordedAt: reviewReceipt?.timestamp ?? submittedEvent.timestamp, currentCandidate: reviewBinding?.status ?? 'unknown',
+      } : null;
+      const activity = currentEvents.filter((event) => event.taskId === taskId).at(-1)?.timestamp ?? null;
+      const state = task?.state ?? route.task.state;
+      const taskBlockers = currentEvents.filter((event) => event.type === 'blocker.recorded' && event.taskId === taskId).map((event) => ({ blockerId: typeof record(event.payload).blockerId === 'string' ? record(event.payload).blockerId as string : 'unknown', reason: typeof record(event.payload).reason === 'string' ? record(event.payload).reason as string : null, taskId, recordedAt: event.timestamp }));
+      const lease = claimed ? lifecycle.leases[taskId] : undefined;
+      tasks.push({ id: taskId, title: taskId, revision: route.task.revision, state, column: this.boardColumn(state), blocked: state === 'blocked', requirements: route.task.acceptance, runId: claimed?.runId ?? null, assignmentSession: claimed?.sessionId ?? null, runState: claimed ? lifecycle.runs[claimed.runId]?.state ?? 'unknown' : null, leaseActive: claimed ? lease?.generation === claimed.lease.generation ? lease.active : false : null, lastActivity: activity, blockers: taskBlockers, gate, review });
+    }
+    const projectedTeam = projectTeam(currentEvents);
+    const memberActivity = new Map<string, string>(); const messageActivity = new Map<string, { recordedAt: string; fromMemberId: string; toMemberId: string }>();
+    const touch = (memberId: unknown, timestamp: string) => { if (typeof memberId === 'string' && memberId) memberActivity.set(memberId, timestamp); };
+    for (const event of currentEvents.filter((candidate) => candidate.type === 'team.operation.recorded')) {
+      const operation = record(record(record(event.payload).record).operation);
+      if (operation.type === 'open' && Array.isArray(operation.members)) for (const member of operation.members) touch(record(member).memberId, event.timestamp);
+      if (operation.type === 'bind') touch(operation.memberId, event.timestamp);
+      if (operation.type === 'message') { touch(operation.fromMemberId, event.timestamp); touch(operation.toMemberId, event.timestamp); if (typeof operation.messageId === 'string') messageActivity.set(operation.messageId, { recordedAt: event.timestamp, fromMemberId: String(operation.fromMemberId), toMemberId: String(operation.toMemberId) }); }
+      if (operation.type === 'ack' && typeof operation.messageId === 'string') { const message = messageActivity.get(operation.messageId); if (message) { touch(message.fromMemberId, event.timestamp); touch(message.toMemberId, event.timestamp); } }
+    }
+    const recordedTeam: RecordedTeamObservation | null = projectedTeam ? {
+      teamId: projectedTeam.teamId, revision: projectedTeam.revision,
+      members: projectedTeam.members.map((member) => ({ memberId: member.memberId, role: member.role, access: member.access, generation: member.generation, threadId: member.threadId, lastRecordedActivity: memberActivity.get(member.memberId) ?? null })),
+      messages: projectedTeam.messages.map((message) => ({ messageId: message.messageId, kind: message.kind, status: message.status, fromMemberId: message.fromMemberId, toMemberId: message.toMemberId, recordedAt: messageActivity.get(message.messageId)?.recordedAt ?? null })),
+    } : null;
+    const blockers: BoardBlocker[] = currentEvents.filter((event) => event.type === 'blocker.recorded').map((event) => ({ blockerId: typeof record(event.payload).blockerId === 'string' ? record(event.payload).blockerId as string : 'unknown', reason: typeof record(event.payload).reason === 'string' ? record(event.payload).reason as string : null, taskId: event.taskId ?? null, recordedAt: event.timestamp }));
+    return { change: { state: lifecycle.changeState, revision: authority.revision, revisionId: authority.revisionId, blockers }, tasks, recordedTeam };
+  }
+
+  async observe(options: CommandOptions): Promise<CommandResult> {
+    const repositoryRoot = await realpath(this.repository(options));
+    const changeId = this.changeId(options);
+    const unavailable = (error: unknown): CommandResult => {
+      const mapped = mapKnownError(error);
+      const observation: BoardObservation = {
+        schemaVersion: 1, observedAt: new Date().toISOString(), repositoryRoot, changeId, availability: 'unavailable', hostLiveStatus: 'unknown',
+        blocker: { code: mapped.publicCode, message: mapped.message },
+      };
+      return result('OBSERVATION_UNAVAILABLE', observation);
+    };
+    try {
+      const journal = new Journal(this.paths(repositoryRoot, changeId).runtime.journal);
+      const first = await journal.observe();
+      const events = await this.readEvents(repositoryRoot, changeId, false, false, false, false, first);
+      const state = await this.boardObservationState(repositoryRoot, changeId, events);
+      const last = await journal.observe();
+      if (first.identity.device !== last.identity.device || first.identity.inode !== last.identity.inode || first.identity.size !== last.identity.size || first.identity.modifiedMs !== last.identity.modifiedMs || first.identity.digest !== last.identity.digest) {
+        return unavailable(new ControllerError(7, 'BLOCKED', 'Journal changed during observation; refresh explicitly to retry'));
+      }
+      const observation: BoardObservation = { schemaVersion: 1, observedAt: new Date().toISOString(), repositoryRoot, changeId, availability: 'available', hostLiveStatus: 'unknown', ...state };
+      return result('OBSERVATION', observation);
+    } catch (error: unknown) { return unavailable(error); }
+  }
+
   async team(options: CommandOptions): Promise<CommandResult> {
     const repositoryRoot = await realpath(this.repository(options));
     const changeId = this.changeId(options);
@@ -2320,7 +2554,7 @@ export class Controller {
     const journal = new Journal(paths.runtime.journal);
     if (scope === 'change') {
       const plan = await this.planChangeTransition(repositoryRoot, changeId, to, events, options);
-      const approvalProjection = to === 'spec-approved' && plan.approval && plan.approvalHash
+      const approvalProjection = to === 'spec-approved' && plan.from !== 'design-review' && plan.approval && plan.approvalHash
         ? { approvalRef: `receipt:${String(plan.approval.receiptId)}`, approvalHash: plan.approvalHash }
         : {};
       const desiredManifest = { ...plan.manifest, state: to, ...approvalProjection };
@@ -2328,7 +2562,7 @@ export class Controller {
       if (to === 'spec-approved') projections.push(await buildProjection(repositoryRoot, changeId, paths.spec, { ...plan.spec, ...approvalProjection }));
       await commitControllerBatch({ repositoryRoot, changeId, journal, priorEvents: events, kind: 'transition', projections, faultAt: options.faultAt, operations: [
         ...(plan.designContext && to === 'design-review' ? [{ type: 'controller.design.review.requested', payload: plan.designContext }] : []),
-        ...(plan.designReceipt && to === 'design-approved' ? [{ type: 'receipt.design-review.ingested', payload: { receipt: plan.designReceipt, issuerAuthenticated: false } }] : []),
+        ...(plan.designReceipt && (to === 'design-approved' || (plan.from === 'design-review' && to === 'spec-approved')) ? [{ type: 'receipt.design-review.ingested', payload: { receipt: plan.designReceipt, issuerAuthenticated: false } }] : []),
         { type: 'change.transition', payload: { from: plan.from, to } },
       ] });
     } else throw new ControllerError(2, 'VALIDATION_ERROR', 'The Task 2.4 public transition seam is fail-closed to change scope; Task/Run transitions are controller-owned');
@@ -2414,8 +2648,8 @@ export class Controller {
     const taskId = stringOption(options, 'task')!;
     const sessionId = stringOption(options, 'session', false);
     const designReference = stringOption(options, 'designReviewReceipt', false);
-    const designReceipt = designReference === undefined ? undefined : await this.claimDesignReceiptPlan(repositoryRoot, changeId, events, designReference);
-    if (routedRisk(routedTasks(events)) !== 'lite' && !designReceipt) await this.assertFreshApprovedDesign(repositoryRoot, changeId, events);
+    const designReceipt = designReference === undefined ? undefined : await this.planFreshClaimDesignReceipt(repositoryRoot, changeId, events, designReference);
+    if (routedRisk(routedTasks(events)) !== 'lite' && !designReceipt) await this.designAdmissionAsync(() => assertFreshApprovedDesign({ repositoryRoot, changeId, routes: routedTasks(events), authority: currentAuthority(events), history: this.designHistory(events) }));
     const supersededRunId = stringOption(options, 'supersede', false);
     if (supersededRunId !== undefined) {
       const admitted = this.claimContinuationAdmission(events, lifecycle, taskId, supersededRunId, sessionId, await canonicalTreeHash(repositoryRoot), new Date());
@@ -2479,7 +2713,7 @@ export class Controller {
     }
     const recoverySources = continuation || plan.designReceipt ? [
       ...(plan.designReceipt ? [plan.designReceipt.designSource, plan.designReceipt.source] : (routedRisk(routedTasks(events)) === 'lite' ? [] : (() => {
-        const context = this.designReviewContext(events);
+        const context = this.designHistory(events).context;
         if (!context) throw new ControllerError(7, 'BLOCKED', 'Claim continuation has no immutable design-review source');
         return [{ relativePath: context.designPath, sha256: context.designHash }];
       })())),
@@ -2533,7 +2767,7 @@ export class Controller {
   }
 
   private assertCandidateBinding(candidate: CandidateBinding, taskId: string, routed: Routed, claimed: Claimed, events: JournalEvent[]): void {
-    if (candidate.taskId !== taskId || candidate.taskRevision !== routed.task.revision || candidate.leaseGeneration !== claimed.lease.generation
+    if (candidate.runId !== claimed.runId || candidate.taskId !== taskId || candidate.taskRevision !== routed.task.revision || candidate.leaseGeneration !== claimed.lease.generation
       || candidate.claimInputTreeHash !== claimed.lease.inputTreeHash || candidate.specHash !== currentAuthority(events)?.specHash || candidate.taskHash !== routed.taskHash) {
       throw new ControllerError(7, 'BLOCKED', 'Registered candidate does not match the current Run/task/spec authority');
     }

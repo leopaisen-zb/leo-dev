@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import YAML from 'yaml';
 import { afterEach, expect, test } from 'vitest';
+import { Journal } from '../../packages/cli/src/state/journal.js';
+import { projectJournalEvents } from '../../packages/cli/src/state/snapshot.js';
 
 const repository = resolve(import.meta.dirname, '../..');
 const executable = join(repository, 'packages/cli/dist/index.js');
@@ -14,7 +16,11 @@ const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 type Envelope = { ok: boolean; code: string; state: Record<string, any> | null; errors: Array<{ code: string; message: string }> };
 
 function cli(root: string, ...args: string[]): { status: number; envelope: Envelope } {
-  const result = spawnSync(process.execPath, [executable, ...args, '--repo', root, '--json'], { cwd: repository, encoding: 'utf8', timeout: 20_000, killSignal: 'SIGKILL' });
+  return cliFrom(repository, root, ...args);
+}
+
+function cliFrom(cwd: string, root: string, ...args: string[]): { status: number; envelope: Envelope } {
+  const result = spawnSync(process.execPath, [executable, ...args, '--repo', root, '--json'], { cwd, encoding: 'utf8', timeout: 20_000, killSignal: 'SIGKILL' });
   expect(result.error, result.error?.message).toBeUndefined();
   const lines = result.stdout.trim().split('\n').filter(Boolean);
   expect(lines, `stderr=${result.stderr}`).toHaveLength(1);
@@ -127,6 +133,80 @@ test('routes Standard without downgrade and requires immutable independent desig
   expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'task-ready'), 0, 'TRANSITIONED');
 }, 20_000);
 
+test('records an independent rejected design then accepts repaired design review under the unchanged authority', async () => {
+  const root = await fixture('standard'); const changeId = 'repaired-design'; await atNonLiteSpecApproved(root, changeId);
+  const manifest = join(root, `.leo-dev/changes/${changeId}/manifest.yaml`);
+  const spec = join(root, `.leo-dev/changes/${changeId}/spec.yaml`);
+  const approvalBefore = { manifest: YAML.parse(await readFile(manifest, 'utf8')), spec: YAML.parse(await readFile(spec, 'utf8')) };
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'design-review', '--design', 'design.md', '--session', 'producer-v1'), 0, 'TRANSITIONED');
+  const rejectedContext = cli(root, 'status', '--change', changeId).envelope.state!.designReviewContext;
+  const rejection = await designReceipt(root, changeId, rejectedContext, { verdict: 'reject', findingsHash: hash('move the review boundary') });
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'spec-approved', '--receipt', rejection), 0, 'TRANSITIONED');
+  expect(YAML.parse(await readFile(manifest, 'utf8'))).toMatchObject({ approvalRef: approvalBefore.manifest.approvalRef, approvalHash: approvalBefore.manifest.approvalHash, state: 'spec-approved' });
+  expect(YAML.parse(await readFile(spec, 'utf8'))).toMatchObject({ approvalRef: approvalBefore.spec.approvalRef, approvalHash: approvalBefore.spec.approvalHash });
+  expect(cli(root, 'status', '--change', changeId).envelope.state).toMatchObject({ tasks: { implementation: { state: 'ready', revision: 1 } } });
+  const observed = cli(root, 'observe', '--change', changeId);
+  expectExit(observed, 0, 'OBSERVATION');
+  expect(observed.envelope.state).toMatchObject({ availability: 'available', change: { state: 'spec-approved' }, tasks: [{ id: 'implementation', state: 'ready' }] });
+  await writeFile(join(root, 'design.md'), '# Repaired design\n');
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'design-review', '--design', 'design.md', '--session', 'producer-v2'), 0, 'TRANSITIONED');
+  const repairedContext = cli(root, 'status', '--change', changeId).envelope.state!.designReviewContext;
+  expect(repairedContext.designHash).toBe(hash('# Repaired design\n'));
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'design-approved', '--receipt', await designReceipt(root, changeId, repairedContext)), 0, 'TRANSITIONED');
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'task-ready'), 0, 'TRANSITIONED');
+}, 30_000);
+
+test('reject-design admission refuses invalid or stale repair receipts without writes', async () => {
+  const root = await fixture('standard'); const changeId = 'reject-admission'; await atNonLiteSpecApproved(root, changeId);
+  const journal = join(root, `.leo-dev/runtime/${changeId}/journal.ndjson`);
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'spec-approved', '--receipt', await designReceipt(root, changeId, { changeId: 'wrong-state', specHash: 'a'.repeat(64), planHash: 'b'.repeat(64), designHash: 'c'.repeat(64), producerSession: 'producer' }, { verdict: 'reject' })), 3, 'TRANSITION_FORBIDDEN');
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'design-review', '--design', 'design.md', '--session', 'producer'), 0, 'TRANSITIONED');
+  const context = cli(root, 'status', '--change', changeId).envelope.state!.designReviewContext;
+  const before = await readFile(journal, 'utf8');
+  const reject = (overrides: Record<string, unknown> = {}) => designReceipt(root, changeId, context, { verdict: 'reject', ...overrides });
+  const dryRunPass = await reject({ verdict: 'pass' });
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'spec-approved', '--receipt', dryRunPass, '--dry-run'), 5, 'CONFLICT');
+  expect(await readFile(journal, 'utf8')).toBe(before);
+  for (const invalid of [
+    await reject({ verdict: 'pass' }),
+    await reject({ expiresAt: new Date(Date.now() - 60_000).toISOString(), timestamp: new Date(Date.now() - 120_000).toISOString() }),
+    await reject({ timestamp: new Date(Date.now() + 60_000).toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString() }),
+    await reject({ specHash: '0'.repeat(64) }),
+    await reject({ provenance: 'platform-attested', sessionId: context.producerSession }),
+  ]) {
+    expect(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'spec-approved', '--receipt', invalid).status).not.toBe(0);
+    expect(await readFile(journal, 'utf8')).toBe(before);
+  }
+  const accepted = await reject({ receiptId: 'reused-reject' });
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'spec-approved', '--receipt', accepted), 0, 'TRANSITIONED');
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'design-review', '--design', 'design.md', '--session', 'producer-v2'), 0, 'TRANSITIONED');
+  const reusedBefore = await readFile(journal, 'utf8');
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'spec-approved', '--receipt', accepted), 5, 'CONFLICT');
+  expect(await readFile(journal, 'utf8')).toBe(reusedBefore);
+  const sourceDrift = await designReceipt(root, changeId, cli(root, 'status', '--change', changeId).envelope.state!.designReviewContext, { verdict: 'reject' });
+  await writeFile(join(root, 'design.md'), '# Drifted after review\n');
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'spec-approved', '--receipt', sourceDrift), 5, 'CONFLICT');
+  expect(await readFile(journal, 'utf8')).toBe(reusedBefore);
+}, 40_000);
+
+test('recovers each interrupted design rejection batch exactly once with preserved approval projections', async () => {
+  const { Controller } = await import('../../packages/cli/dist/controller/controller.js');
+  for (const faultAt of ['after-batch-prepared', 'after-batch-projection'] as const) {
+    const root = await fixture('standard'); const changeId = `reject-recovery-${faultAt}`; await atNonLiteSpecApproved(root, changeId);
+    const manifest = join(root, `.leo-dev/changes/${changeId}/manifest.yaml`); const spec = join(root, `.leo-dev/changes/${changeId}/spec.yaml`);
+    const before = { manifest: YAML.parse(await readFile(manifest, 'utf8')), spec: YAML.parse(await readFile(spec, 'utf8')) };
+    expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'design-review', '--design', 'design.md', '--session', 'producer'), 0, 'TRANSITIONED');
+    const context = cli(root, 'status', '--change', changeId).envelope.state!.designReviewContext;
+    await expect(new Controller().execute('transition', { repo: root, change: changeId, scope: 'change', to: 'spec-approved', receipt: await designReceipt(root, changeId, context, { verdict: 'reject' }), faultAt })).rejects.toThrow('Simulated crash');
+    expectExit(cli(root, 'resume', '--change', changeId), 0, 'RESUMED');
+    const events = projectJournalEvents((await new Journal(join(root, `.leo-dev/runtime/${changeId}/journal.ndjson`)).replayStrict()).events).events;
+    expect(events.filter((event) => event.type === 'receipt.design-review.ingested')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'change.transition' && (event.payload as { from?: string; to?: string }).from === 'design-review' && (event.payload as { to?: string }).to === 'spec-approved')).toHaveLength(1);
+    expect(YAML.parse(await readFile(manifest, 'utf8'))).toMatchObject({ state: 'spec-approved', approvalRef: before.manifest.approvalRef, approvalHash: before.manifest.approvalHash });
+    expect(YAML.parse(await readFile(spec, 'utf8'))).toMatchObject({ approvalRef: before.spec.approvalRef, approvalHash: before.spec.approvalHash });
+  }
+}, 40_000);
+
 test('rejects integration plans that do not transitively depend on every other task', async () => {
   const root = await fixture();
   await writeFile(join(root, 'plan.json'), JSON.stringify({ schemaVersion: 1, tasks: [
@@ -203,6 +283,20 @@ test('non-Lite revision invalidates design evidence until a fresh bound design r
   expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'task-ready'), 0, 'TRANSITIONED');
 }, 40_000);
 
+// Mutant caught: ordinary design approval resolves a relative receipt from
+// --repo, shadowing the valid receipt supplied from the invoking directory.
+test('ordinary design approval resolves a relative receipt from the caller cwd', async () => {
+  const root = await fixture('standard'); const changeId = 'caller-cwd-receipt'; await atNonLiteSpecApproved(root, changeId);
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'design-review', '--design', 'design.md', '--session', 'producer'), 0, 'TRANSITIONED');
+  const context = cli(root, 'status', '--change', changeId).envelope.state!.designReviewContext;
+  const caller = await mkdtemp(join(tmpdir(), 'leo-dev-design-caller-')); temporary.push(caller);
+  const validReceipt = await designReceipt(root, changeId, context);
+  await writeFile(join(caller, 'receipt.json'), await readFile(validReceipt));
+  await writeFile(join(root, 'receipt.json'), JSON.stringify({ shadow: 'not a design receipt' }));
+
+  expectExit(cliFrom(caller, root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'design-approved', '--receipt', 'receipt.json'), 0, 'TRANSITIONED');
+}, 30_000);
+
 test('recovers a pending design-review batch and refuses a third-value design-approved projection', async () => {
   const { Controller } = await import('../../packages/cli/dist/controller/controller.js');
   const root = await fixture('standard'); const changeId = 'design-recovery'; await atNonLiteSpecApproved(root, changeId);
@@ -212,4 +306,31 @@ test('recovers a pending design-review batch and refuses a third-value design-ap
   await expect(new Controller().execute('transition', { repo: root, change: changeId, scope: 'change', to: 'design-approved', receipt: await designReceipt(root, changeId, context), faultAt: 'after-batch-projection' })).rejects.toThrow('Simulated crash');
   const manifest = join(root, `.leo-dev/changes/${changeId}/manifest.yaml`); await writeFile(manifest, 'third: value\n'); const third = await readFile(manifest, 'utf8');
   expectExit(cli(root, 'resume', '--change', changeId), 7, 'BLOCKED'); expect(await readFile(manifest, 'utf8')).toBe(third);
+}, 40_000);
+
+// Mutant caught: status reuses the older valid request after a corrupt relevant
+// journal event, displaying an approval context that no longer has valid history.
+test('status blocks a malformed latest persisted design event instead of reusing an older context', async () => {
+  const root = await fixture('standard'); const changeId = 'corrupt-design-status'; await atNonLiteSpecApproved(root, changeId);
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'design-review', '--design', 'design.md', '--session', 'producer'), 0, 'TRANSITIONED');
+  const context = cli(root, 'status', '--change', changeId).envelope.state!.designReviewContext;
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'design-approved', '--receipt', await designReceipt(root, changeId, context)), 0, 'TRANSITIONED');
+  const journal = new Journal(join(root, `.leo-dev/runtime/${changeId}/journal.ndjson`));
+  await journal.append({ changeId, type: 'receipt.design-review.ingested', payload: { receipt: { receiptId: 'corrupt' }, issuerAuthenticated: false } });
+  expectExit(cli(root, 'status', '--change', changeId), 7, 'BLOCKED');
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'task-ready'), 7, 'BLOCKED');
+}, 30_000);
+
+// Mutant caught: requiring nonempty serialized source bytes blocks the accepted
+// empty readable design file after its request has already reached the journal.
+test('accepts an empty design source through transition, status, and prepared-batch recovery', async () => {
+  const root = await fixture('standard'); const changeId = 'empty-design-source'; await writeFile(join(root, 'design.md'), ''); await atNonLiteSpecApproved(root, changeId);
+  expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'design-review', '--design', 'design.md', '--session', 'producer'), 0, 'TRANSITIONED');
+  expect(cli(root, 'status', '--change', changeId).envelope.state!.designReviewContext).toMatchObject({ designSourceBase64: '' });
+
+  const recoveryRoot = await fixture('standard'); const recoveryChange = 'empty-design-recovery'; await writeFile(join(recoveryRoot, 'design.md'), ''); await atNonLiteSpecApproved(recoveryRoot, recoveryChange);
+  const { Controller } = await import('../../packages/cli/dist/controller/controller.js');
+  await expect(new Controller().execute('transition', { repo: recoveryRoot, change: recoveryChange, scope: 'change', to: 'design-review', design: 'design.md', session: 'producer', faultAt: 'after-batch-prepared' })).rejects.toThrow('Simulated crash');
+  expectExit(cli(recoveryRoot, 'resume', '--change', recoveryChange), 0, 'RESUMED');
+  expect(cli(recoveryRoot, 'status', '--change', recoveryChange).envelope.state!.designReviewContext).toMatchObject({ designSourceBase64: '' });
 }, 40_000);

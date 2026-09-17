@@ -95,7 +95,7 @@ export async function loadMetadata(path = join(root, 'package.yaml')) {
 }
 function manifestFor(platform, metadata) {
   const common = { name: metadata.name, version: metadata.version, description: metadata.description, author: { name: metadata.author.name }, license: metadata.license };
-  if (platform === 'codex') return { ...common, repository: repositoryUrl, skills: './skills/', interface: { displayName: 'Leo Dev', shortDescription: 'Evidence-aware development workflow for coding agents', longDescription: 'A portable development workflow that preserves approved specifications and reports verified delivery evidence.', developerName: metadata.author.name, category: 'Developer Tools', capabilities: ['Interactive', 'Read', 'Write'], defaultPrompt: ['Use $develop to continue approved development work with verification evidence.'], composerIcon: `./${logo}`, logo: `./${logo}` } };
+  if (platform === 'codex') return { ...common, repository: repositoryUrl, skills: './skills/', interface: { displayName: 'Leo Dev', shortDescription: 'Evidence-aware development workflow for coding agents', longDescription: 'A portable development workflow that preserves approved specifications and reports verified delivery evidence.', developerName: metadata.author.name, category: 'Developer Tools', capabilities: ['Interactive', 'Read', 'Write'], defaultPrompt: ['Use $leo-dev:develop to continue approved development work with verification evidence.'], composerIcon: `./${logo}`, logo: `./${logo}` } };
   if (platform === 'cursor') return { ...common, displayName: 'Leo Dev', skills: './skills/' };
   if (platform === 'open-agent-plugin') return { ...common, skills: './skills/' };
   return common;

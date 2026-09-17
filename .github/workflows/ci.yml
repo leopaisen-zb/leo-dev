@@ -19,6 +19,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: npm run lint:quality
+      - run: npm run test:quality-coverage
       - run: python3 -m unittest tests/test_doctor.py
       - run: node --test examples/mochi-board/tests/*.test.mjs
       - run: npm run build:adapters

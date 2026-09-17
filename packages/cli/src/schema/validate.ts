@@ -41,8 +41,8 @@ function semanticErrors(kind: DocumentKind, value: Record<string, unknown>, now:
 }
 
 export function validateDocument(kind: DocumentKind, value: unknown, now = new Date(), maxFutureSkewMs = 0): Validation {
-  const validate = compiled[kind];
-  if (!validate(value)) return { ok: false, code: 'SCHEMA_INVALID', details: details(validate.errors) };
+  const shape = validateDocumentShape(kind, value);
+  if (!shape.ok) return shape;
   if (!Number.isFinite(maxFutureSkewMs) || maxFutureSkewMs < 0) return { ok: false, code: 'SCHEMA_INVALID', details: ['future clock skew must be a non-negative finite duration'] };
   const errors = semanticErrors(kind, asRecord(value), now, maxFutureSkewMs);
   if (errors.length > 0) {
@@ -52,6 +52,13 @@ export function validateDocument(kind: DocumentKind, value: unknown, now = new D
   }
   const expiresAt = timestamp(asRecord(value).expiresAt);
   if (Number.isFinite(expiresAt) && expiresAt <= now.getTime()) return { ok: false, code: 'RECEIPT_EXPIRED', details: ['receipt has expired'] };
+  return { ok: true, value };
+}
+
+/** Validates only the compiled JSON Schema; journal recovery supplies its own clock. */
+export function validateDocumentShape(kind: DocumentKind, value: unknown): Validation {
+  const validate = compiled[kind];
+  if (!validate(value)) return { ok: false, code: 'SCHEMA_INVALID', details: details(validate.errors) };
   return { ok: true, value };
 }
 

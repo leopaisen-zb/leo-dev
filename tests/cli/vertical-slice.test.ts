@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -224,12 +224,12 @@ afterEach(async () => {
 });
 
 describe('compiled public CLI contract', () => {
-  test('registers the public lifecycle and team commands and converts help to one JSON envelope', async () => {
+  test('registers the public lifecycle, observation and team commands and converts help to one JSON envelope', async () => {
     const root = await fixture();
     const result = cli(root, '--help');
     expectExit(result, 0, 'HELP');
     expect((result.envelope.state as { commands: string[] }).commands).toEqual([
-      'init', 'inspect', 'route', 'revise', 'status', 'transition', 'claim', 'run-gates', 'submit',
+      'init', 'inspect', 'observe', 'board', 'route', 'revise', 'status', 'transition', 'claim', 'run-gates', 'submit',
       'review', 'approve', 'waive', 'resolve', 'reconcile', 'resume', 'team', 'doctor',
     ]);
   });
@@ -384,6 +384,15 @@ describe('compiled public CLI contract', () => {
     const result = cli(root, 'run-gates', '--change', 'thrown-unknown', '--task', 'task-1');
     expectExit(result, 7, 'BLOCKED');
     expect(result.envelope.state).toMatchObject({ changeState: 'approval-required', tasks: { 'task-1': { state: 'blocked' } } });
+    const runtime = join(root, '.leo-dev/runtime/thrown-unknown');
+    const beforeObservation = { bytes: await readFile(join(runtime, 'journal.ndjson')), directory: await lstat(runtime, { bigint: true }) };
+    const observed = cli(root, 'observe', '--change', 'thrown-unknown');
+    expectExit(observed, 0, 'OBSERVATION');
+    expect(observed.envelope.state).toMatchObject({ availability: 'available', change: { state: 'approval-required' } });
+    const afterObservation = { bytes: await readFile(join(runtime, 'journal.ndjson')), directory: await lstat(runtime, { bigint: true }) };
+    expect(afterObservation.bytes).toEqual(beforeObservation.bytes);
+    expect(afterObservation.directory.mtimeNs).toBe(beforeObservation.directory.mtimeNs);
+    expect(afterObservation.directory.ctimeNs).toBe(beforeObservation.directory.ctimeNs);
     const status = cli(root, 'status', '--change', 'thrown-unknown');
     expect(status.envelope.state).toMatchObject({ changeState: 'approval-required', tasks: { 'task-1': { state: 'blocked' } } });
     const context = (status.envelope.state as { reconciliationContext: Record<string, unknown> }).reconciliationContext;

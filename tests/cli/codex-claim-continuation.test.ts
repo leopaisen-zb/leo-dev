@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import YAML from 'yaml';
 import { afterEach, expect, test } from 'vitest';
 import { Controller } from '../../packages/cli/src/controller/controller.js';
@@ -207,6 +207,19 @@ test('fresh design receipts are independent, current, unconsumed claim inputs an
   expect(await readFile(runtimePaths(root, changeId).journal, 'utf8')).toContain(JSON.parse(sourceBefore).receiptId);
   await unchangedAfterRefusal(root, changeId, () => cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--session', 'another-producer', '--design-review-receipt', fresh));
 }, 60_000);
+
+// Mutant caught: checking a drifted reviewed design before validating a fresh
+// receipt's repository containment changes the public refusal precedence.
+test('fresh claim validates an escaping receipt path before a drifted design source', async () => {
+  const root = await fixture(); const changeId = 'fresh-receipt-path-precedence';
+  await approveAndDesign(root, changeId, new Date(Date.now() + 60_000).toISOString());
+  const escaped = join(dirname(root), `leo-dev-escaped-${randomUUID()}.json`); temporary.push(escaped);
+  await writeFile(escaped, JSON.stringify({ shadow: 'outside repository' }));
+  await writeFile(join(root, 'design.md'), '# Drifted after review\n');
+
+  const outcome = await unchangedAfterRefusal(root, changeId, () => cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--session', 'fresh-producer', '--design-review-receipt', `../${basename(escaped)}`));
+  expectExit(outcome, 2, 'VALIDATION_ERROR');
+}, 30_000);
 
 test('continuation retains consumed failures and fresh-debug requires a session distinct from every earlier claim', async () => {
   const root = await fixture(); const changeId = 'continuation-fresh-debug-history';

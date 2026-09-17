@@ -4,6 +4,9 @@ import { reconcileUnknown, reduceRunOutcome, transitionChange, transitionRun, tr
 describe('normative state machines', () => {
   test('permits a listed change route and rejects every unlisted route', () => {
     expect(transitionChange('triage', 'discovery', { riskRecorded: true }).ok).toBe(true);
+    expect(transitionChange('design-review', 'spec-approved', { rejectReviewReceiptMatches: true }).ok).toBe(true);
+    expect(transitionChange('design-review', 'spec-approved')).toMatchObject({ ok: false, code: 'TRANSITION_FORBIDDEN' });
+    expect(transitionChange('design-review', 'spec-approved', { reviewReceiptMatches: true })).toMatchObject({ ok: false, code: 'TRANSITION_FORBIDDEN' });
     expect(transitionChange('triage', 'archived')).toMatchObject({ ok: false, code: 'TRANSITION_FORBIDDEN' });
     expect(transitionChange('archived', 'triage')).toMatchObject({ ok: false, code: 'TRANSITION_FORBIDDEN' });
   });

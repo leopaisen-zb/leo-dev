@@ -2,6 +2,8 @@
 
 Release 0.2.0 has passed its final clean-checkout test suite and independent whole-change review. The Codex development exercise also completed independent verification and public-controller archive admission. The records below state the scope of each result.
 
+The counts below describe that release, not every later source edit. The local Codex quality update records its candidate hashes, scoped checks and actual-host results in `verification/codex-quality-update/README.md` in the development checkout. That local evidence must be checked separately before attributing an earlier release result to a new package.
+
 ## Environment and results
 
 The recorded host is macOS on Apple Silicon, with Node.js 22.22.2 and Codex CLI 0.154.0. The same explicit Node executable is used throughout each controller change. Local HTTP checks use temporary data and loopback listeners. Actual host sessions perform implementation and independent review; journal labels record those identities without authenticating them.

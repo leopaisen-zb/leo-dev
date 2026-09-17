@@ -8,7 +8,7 @@ Existing change: run `leo-dev inspect --change <id>` or `leo-dev status --change
 
 New change: run `leo-dev init --change <id> --spec <path>`, then `leo-dev inspect --change <id>`, then the reviewed `leo-dev route` path. `route` accepts the legacy `--task/--gate` Lite form and a repository task plan. Its committed route retains the maximum actual task risk (`lite`, `standard`, or `full`); a caller must not silently downgrade a Standard/Full plan to use a Lite path.
 
-Lite may continue from `spec-approved` to `task-ready`. Standard/Full must enter `design-review`, obtain a current design receipt, then enter `design-approved` before `task-ready`. 缺 Node、controller 或所需 transition 时如实报告 prerequisite/unsupported，不模拟状态。
+Lite may continue from `spec-approved` to `task-ready`. Standard/Full must enter `design-review`, obtain a current design receipt, then enter `design-approved` before `task-ready`. A current independent `reject` receipt may return only `design-review → spec-approved` in one transition batch; it retains the original specification approval and task revisions. Edit the rejected design only after that return, request a new design review with the repaired bytes, and obtain a fresh independent `pass` before `task-ready`. The same receipt must exactly bind the current change/spec/plan/design/producer context, be current and unused, and provenance/session labels remain unauthenticated audit metadata. 缺 Node、controller 或所需 transition 时如实报告 prerequisite/unsupported，不模拟状态。
 
 `integration-review` 后仍须独立的 release evidence；没有该证据不得称 release-ready。只有一个已完成的最终 `role: integration` task、其 verification-only candidate、成功 Gate/evidence 和独立 Standard+ review 都当前有效时，才可运行：
 

@@ -6,7 +6,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import YAML from 'yaml';
 import { loadSchema } from '../../packages/cli/src/schema/load.js';
-import { documentKinds, validateDocument, validateReceipt } from '../../packages/cli/src/schema/validate.js';
+import { documentKinds, validateDocument, validateDocumentShape, validateReceipt } from '../../packages/cli/src/schema/validate.js';
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 
@@ -46,6 +46,18 @@ describe('controller schemas', () => {
       receiptId: 'a', provenance: 'human-confirmed', actorLabel: 'Leo', decision: 'grant', grantedAt: '2019-01-01T00:00:00.000Z', expiresAt: '2020-01-02T00:00:00.000Z', changeId: 'c', scope: 'change', operationKind: 'external-write', decisionFingerprint: 'a'.repeat(64), gateDefinitionFingerprint: 'b'.repeat(64), argvFingerprint: 'c'.repeat(64), cwdFingerprint: 'd'.repeat(64), environmentFingerprint: 'e'.repeat(64), inputFingerprint: 'f'.repeat(64)
     };
     expect(validateDocument('approval', approval, new Date('2019-06-01T00:00:00.000Z')).ok).toBe(true);
+  });
+
+  // Mutant caught: delegating structural journal decoding to validateDocument
+  // makes an otherwise valid historical receipt fail merely because time passed.
+  test('validates the stored receipt shape without evaluating the current clock', () => {
+    const designReview = {
+      receiptId: 'historical-design', provenance: 'human-confirmed', actorLabel: 'reviewer', changeId: 'change',
+      specHash: 'a'.repeat(64), planHash: 'b'.repeat(64), designHash: 'c'.repeat(64), producerSession: 'producer',
+      findingsHash: 'd'.repeat(64), verdict: 'pass', timestamp: '2020-01-01T00:00:00.000Z', expiresAt: '2020-01-02T00:00:00.000Z',
+    };
+    expect(validateDocument('design-review', designReview).code).toBe('RECEIPT_EXPIRED');
+    expect(validateDocumentShape('design-review', designReview)).toMatchObject({ ok: true, value: designReview });
   });
 
   test('returns a discriminated receipt result for transition consumers', () => {

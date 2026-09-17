@@ -19,8 +19,8 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Use $develop to continue approved work with verification evidence.",
-      "Use $develop to inspect the project and implement an approved feature."
+      "Use $leo-dev:develop to continue approved work with verification evidence.",
+      "Use $leo-dev:develop to inspect the project and implement an approved feature."
     ],
     "composerIcon": "./assets/shinchan-logo.png",
     "logo": "./assets/shinchan-logo.png"

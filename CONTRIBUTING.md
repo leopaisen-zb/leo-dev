@@ -4,13 +4,15 @@ Leo Dev is licensed under the [MIT License](LICENSE). Coordinate substantial cha
 
 ## Local checks
 
-Use Node.js 20 or newer and npm:
+Use Node.js 22 and npm for source development and quality checks. The packaged controller's runtime requirement remains Node.js 20 or newer:
 
 ```sh
 npm ci
 npm run build
 npm run typecheck
+npm run lint:quality
 npm test
+npm run test:quality-coverage
 npm run build:adapters
 npm run verify:packages
 npm run build:marketplace
