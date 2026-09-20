@@ -101,57 +101,57 @@ test('synthetic A to B to C plan keeps C pending through B rejection then unlock
   const afterC = await passReview(root, 'plan', 'c'); expect(afterC.state.changeState).toBe('integration-review');
 }, 60_000);
 
-test('synthetic mixed Gate and review failures consume four attempts, require fresh sessions, then refuse a fifth claim', async () => {
-  const root = await fixture(); await executingToggle(root, 'budget');
-  let claim = cli(root, 'claim', '--change', 'budget', '--task', 'task', '--session', 's1'); expectExit(claim, 0, 'CLAIMED');
-  expectExit(cli(root, 'claim', '--change', 'budget', '--task', 'task', '--dry-run'), 5, 'CONFLICT');
-  expectExit(cli(root, 'run-gates', '--change', 'budget', '--task', 'task'), 4, 'GATE_FAILED');
-  expectExit(cli(root, 'claim', '--change', 'budget', '--task', 'task', '--dry-run'), 0, 'DRY_RUN');
+test('synthetic identical review findings block as no-progress', async () => {
+  const root = await fixture(); await executingToggle(root, 'same-findings');
   await writeFile(join(root, 'pass.flag'), 'pass\n');
-  claim = cli(root, 'claim', '--change', 'budget', '--task', 'task', '--session', 's2'); expectExit(claim, 0, 'CLAIMED');
-  const runId = claim.envelope.state.run.runId; expectExit(cli(root, 'run-gates', '--change', 'budget', '--task', 'task', '--run', runId), 0, 'GATES_PASSED'); expectExit(cli(root, 'submit', '--change', 'budget', '--task', 'task'), 0, 'SUBMITTED_FOR_REVIEW');
-  const context = cli(root, 'status', '--change', 'budget').envelope.state.reviewContext;
-  const rejected = await receipt(root, { receiptId: 'budget-reject', provenance: 'agent-asserted', actorLabel: 'fixture', sessionId: 'review', runId: context.runId, taskId: context.taskId, taskRevision: context.taskRevision, leaseGeneration: context.leaseGeneration, specHash: context.specHash, taskHash: context.taskHash, treeHash: context.treeHash, findingsHash: hash('reject'), verdict: 'reject', timestamp: now(), expiresAt: later() }); expectExit(cli(root, 'review', '--change', 'budget', '--task', 'task', '--receipt', rejected), 0, 'REVIEW_REJECTED');
-  await rm(join(root, 'pass.flag')); claim = cli(root, 'claim', '--change', 'budget', '--task', 'task', '--session', 's3'); expectExit(claim, 0, 'CLAIMED');
-  expectExit(cli(root, 'run-gates', '--change', 'budget', '--task', 'task'), 4, 'GATE_FAILED');
-  const status = cli(root, 'status', '--change', 'budget').envelope.state; expect(status.attempts.task).toMatchObject({ consumed: 3, maximum: 4, nextKind: 'fresh-debug' });
-  expectExit(cli(root, 'claim', '--change', 'budget', '--task', 'task', '--session', 's3', '--dry-run'), 5, 'CONFLICT');
-  expectExit(cli(root, 'claim', '--change', 'budget', '--task', 'task', '--dry-run'), 5, 'CONFLICT');
-  expectExit(cli(root, 'claim', '--change', 'budget', '--task', 'task', '--session', 's4', '--dry-run'), 0, 'DRY_RUN');
-  expectExit(cli(root, 'claim', '--change', 'budget', '--task', 'task', '--session', 's3'), 5, 'CONFLICT');
-  claim = cli(root, 'claim', '--change', 'budget', '--task', 'task', '--session', 's4'); expectExit(claim, 0, 'CLAIMED');
-  expectExit(cli(root, 'run-gates', '--change', 'budget', '--task', 'task', '--run', claim.envelope.state.run.runId), 4, 'GATE_FAILED');
-  expect(cli(root, 'status', '--change', 'budget').envelope.state).toMatchObject({ changeState: 'blocked', tasks: { task: { state: 'blocked' } }, attempts: { task: { consumed: 4, nextKind: 'blocked' } } });
-  expect(cli(root, 'claim', '--change', 'budget', '--task', 'task', '--session', 's5').status).not.toBe(0);
+  const first = await passReview(root, 'same-findings', 'task', 'reject', 'reject-1');
+  expect(first.state.changeState).not.toBe('blocked');
+  expect(first.state.attempts.task).toMatchObject({ consumed: 1, maximum: null, nextKind: 'remediation' });
+  const second = await passReview(root, 'same-findings', 'task', 'reject', 'reject-2');
+  expect(second.code).toBe('REVIEW_REJECTED');
+  expect(second.state).toMatchObject({ changeState: 'blocked', tasks: { task: { state: 'blocked' } }, attempts: { task: { consumed: 2, nextKind: 'blocked' } } });
+  expect(second.state.blockers.join(' ')).toContain('no-progress');
 }, 60_000);
 
-test('synthetic fresh-debug dry-run fails closed when any earlier claim omitted session provenance', async () => {
-  const root = await fixture(); await executingToggle(root, 'missing-provenance');
-  let claim = cli(root, 'claim', '--change', 'missing-provenance', '--task', 'task', '--session', 's1'); expectExit(claim, 0, 'CLAIMED');
-  expectExit(cli(root, 'run-gates', '--change', 'missing-provenance', '--task', 'task'), 4, 'GATE_FAILED');
+test('synthetic distinct review findings keep remediating past four attempts', async () => {
+  const root = await fixture(); await executingToggle(root, 'new-findings');
   await writeFile(join(root, 'pass.flag'), 'pass\n');
-  claim = cli(root, 'claim', '--change', 'missing-provenance', '--task', 'task'); expectExit(claim, 0, 'CLAIMED');
-  expectExit(cli(root, 'run-gates', '--change', 'missing-provenance', '--task', 'task', '--run', claim.envelope.state.run.runId), 0, 'GATES_PASSED');
-  expectExit(cli(root, 'submit', '--change', 'missing-provenance', '--task', 'task'), 0, 'SUBMITTED_FOR_REVIEW');
-  const context = cli(root, 'status', '--change', 'missing-provenance').envelope.state.reviewContext;
-  const rejected = await receipt(root, { receiptId: 'missing-provenance-reject', provenance: 'agent-asserted', actorLabel: 'fixture', sessionId: 'review', runId: context.runId, taskId: context.taskId, taskRevision: context.taskRevision, leaseGeneration: context.leaseGeneration, specHash: context.specHash, taskHash: context.taskHash, treeHash: context.treeHash, findingsHash: hash('reject'), verdict: 'reject', timestamp: now(), expiresAt: later() });
-  expectExit(cli(root, 'review', '--change', 'missing-provenance', '--task', 'task', '--receipt', rejected), 0, 'REVIEW_REJECTED');
-  await rm(join(root, 'pass.flag')); claim = cli(root, 'claim', '--change', 'missing-provenance', '--task', 'task', '--session', 's3'); expectExit(claim, 0, 'CLAIMED');
-  expectExit(cli(root, 'run-gates', '--change', 'missing-provenance', '--task', 'task'), 4, 'GATE_FAILED');
-  expectExit(cli(root, 'claim', '--change', 'missing-provenance', '--task', 'task', '--session', 's4', '--dry-run'), 7, 'BLOCKED');
-}, 60_000);
-
-test('synthetic reconciled failed unknown attempts release their lease, consume the shared budget, and block the fourth', async () => {
-  const root = await fixture(); await executingMissing(root, 'unknown-budget');
-  for (const [ordinal, session] of ['u1', 'u2', 'u3', 'u4'].entries()) {
-    expectExit(cli(root, 'claim', '--change', 'unknown-budget', '--task', 'task', '--session', session), 0, 'CLAIMED');
-    expectExit(await runMissingGate(root, 'unknown-budget'), 7, 'BLOCKED');
-    const reconciled = await reconcileFailed(root, 'unknown-budget');
-    const expectedState = ordinal === 3 ? 'blocked' : 'remediation';
-    expect(reconciled.state).toMatchObject({ tasks: { task: { state: expectedState } }, leases: { task: { active: false } }, attempts: { task: { consumed: ordinal + 1 } } });
+  for (const n of [1, 2, 3, 4]) {
+    const claim = cli(root, 'claim', '--change', 'new-findings', '--task', 'task', '--session', `s${n}`); expectExit(claim, 0, 'CLAIMED');
+    expectExit(cli(root, 'run-gates', '--change', 'new-findings', '--task', 'task', '--run', claim.envelope.state.run.runId), 0, 'GATES_PASSED');
+    expectExit(cli(root, 'submit', '--change', 'new-findings', '--task', 'task'), 0, 'SUBMITTED_FOR_REVIEW');
+    const context = cli(root, 'status', '--change', 'new-findings').envelope.state.reviewContext;
+    const rejected = await receipt(root, { receiptId: `reject-${n}`, provenance: 'agent-asserted', actorLabel: 'fixture', sessionId: `review-${n}`, runId: context.runId, taskId: context.taskId, taskRevision: context.taskRevision, leaseGeneration: context.leaseGeneration, specHash: context.specHash, taskHash: context.taskHash, treeHash: context.treeHash, findingsHash: hash(`reject-${n}`), verdict: 'reject', timestamp: now(), expiresAt: later() });
+    expectExit(cli(root, 'review', '--change', 'new-findings', '--task', 'task', '--receipt', rejected), 0, 'REVIEW_REJECTED');
+    expect(cli(root, 'status', '--change', 'new-findings').envelope.state.changeState).not.toBe('blocked');
   }
-  expect(cli(root, 'status', '--change', 'unknown-budget').envelope.state).toMatchObject({ changeState: 'blocked', attempts: { task: { consumed: 4, nextKind: 'blocked' } } });
-  expect(cli(root, 'claim', '--change', 'unknown-budget', '--task', 'task', '--session', 'u5').status).not.toBe(0);
+  const fifth = cli(root, 'claim', '--change', 'new-findings', '--task', 'task', '--session', 's5');
+  expectExit(fifth, 0, 'CLAIMED');
+  expect(fifth.envelope.state).toMatchObject({ changeState: 'executing', attempts: { task: { consumed: 4, maximum: null, nextKind: 'remediation' } }, run: { attemptKind: 'remediation' } });
+}, 60_000);
+
+test('synthetic ordinary claim without session still follows lease rules after a failure', async () => {
+  const root = await fixture(); await executingToggle(root, 'missing-session');
+  let claim = cli(root, 'claim', '--change', 'missing-session', '--task', 'task', '--session', 's1'); expectExit(claim, 0, 'CLAIMED');
+  expectExit(cli(root, 'run-gates', '--change', 'missing-session', '--task', 'task'), 4, 'GATE_FAILED');
+  expectExit(cli(root, 'claim', '--change', 'missing-session', '--task', 'task', '--dry-run'), 0, 'DRY_RUN');
+  claim = cli(root, 'claim', '--change', 'missing-session', '--task', 'task'); expectExit(claim, 0, 'CLAIMED');
+  expect(claim.envelope.state.run.attemptKind).toBe('remediation');
+  expectExit(cli(root, 'claim', '--change', 'missing-session', '--task', 'task', '--dry-run'), 5, 'CONFLICT');
+}, 60_000);
+
+test('synthetic reconciled failed unknown attempts release their lease and block when there is no new evidence', async () => {
+  const root = await fixture(); await executingMissing(root, 'unknown-budget');
+  expectExit(cli(root, 'claim', '--change', 'unknown-budget', '--task', 'task', '--session', 'u1'), 0, 'CLAIMED');
+  expectExit(await runMissingGate(root, 'unknown-budget'), 7, 'BLOCKED');
+  const first = await reconcileFailed(root, 'unknown-budget');
+  expect(first.state).toMatchObject({ changeState: 'executing', tasks: { task: { state: 'remediation' } }, leases: { task: { active: false } }, attempts: { task: { consumed: 1, nextKind: 'remediation' } } });
+  expectExit(cli(root, 'claim', '--change', 'unknown-budget', '--task', 'task', '--session', 'u2'), 0, 'CLAIMED');
+  expectExit(await runMissingGate(root, 'unknown-budget'), 7, 'BLOCKED');
+  const second = await reconcileFailed(root, 'unknown-budget');
+  expect(second.state).toMatchObject({ changeState: 'blocked', tasks: { task: { state: 'blocked' } }, leases: { task: { active: false } }, attempts: { task: { consumed: 2, nextKind: 'blocked' } } });
+  expect(second.state.blockers.join(' ')).toContain('no-progress');
+  expect(cli(root, 'claim', '--change', 'unknown-budget', '--task', 'task', '--session', 'u3').status).not.toBe(0);
 }, 90_000);
 
 test.each([

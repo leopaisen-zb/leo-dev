@@ -21,6 +21,7 @@ import { runtimePaths } from '../runtime/paths.js';
 import { normalizeRepositoryPath } from '../security/paths.js';
 import { loadSchema } from '../schema/load.js';
 import { validateDocument, validateReceipt, validateTaskDefinition, type ReceiptKind } from '../schema/validate.js';
+import { decideFailedAttempt, failedAttemptCount, previousFindingsHash } from '../state/attempt-policy.js';
 import { Journal, JournalCorruptError, JournalTailMismatchError, recoverJournal, type JournalObservation } from '../state/journal.js';
 import type { BoardBlocker, BoardColumn, BoardEvidence, BoardObservation, BoardTaskObservation, RecordedTeamObservation } from '../board/types.js';
 import type { Lease } from '../state/lease.js';
@@ -230,17 +231,6 @@ function sameRevisionSubstance(authority: Pick<RevisionAuthority, 'specPath' | '
   return authority.specPath === previous.specPath && authority.sourceHash === previous.sourceHash
     && authority.constitutionPath === previous.constitutionPath && authority.constitutionHash === previous.constitutionHash
     && fingerprint(revisionRouteSubstance(authority.routes)) === fingerprint(revisionRouteSubstance(previousRoutes));
-}
-
-function failedAttemptCount(events: JournalEvent[], taskId: string, taskRevision: number): number {
-  void taskRevision;
-  return events.filter((event) => event.type === 'task.attempt.failed' && event.taskId === taskId).length;
-}
-
-function nextAttemptKind(failures: number): 'initial' | 'remediation' | 'fresh-debug' | 'blocked' {
-  if (failures === 0) return 'initial';
-  if (failures < 3) return 'remediation';
-  return failures === 3 ? 'fresh-debug' : 'blocked';
 }
 
 function entryPath(entry: string): string {
@@ -947,7 +937,7 @@ export class Controller {
       const admitted = this.claimContinuationAdmission(prior, lifecycle, taskId, oldRunId, sessionId, inputTree, at);
       plan = { ...admitted, currentTaskState: 'ready', sessionId, inputTree };
     } else {
-      plan = { ...this.claimAdmission(prior, lifecycle, taskId, sessionId), sessionId, inputTree };
+      plan = { ...this.claimAdmission(prior, lifecycle, taskId), sessionId, inputTree };
     }
     const authority = currentAuthority(prior);
     const entries = new Map(inputTree.entries.map((entry) => [entryPath(entry), entry.split('\0')[2]]));
@@ -2017,9 +2007,13 @@ export class Controller {
       }
     }
     // The unknown context deliberately records that a retry was initially possible;
-    // reconciliation must recalculate its remaining shared Gate/review budget.
+    // reconciliation must recalculate progress from the previous failure evidence.
     const retryRemaining = resolvedRunState === 'failed'
-      ? failedAttemptCount(events, taskId, context.taskRevision) + 1 < 4
+      ? decideFailedAttempt({
+        priorFailures: failedAttemptCount(events, taskId),
+        previousFindingsHash: previousFindingsHash(events, taskId),
+        currentFindingsHash: typeof receipt.findingsHash === 'string' ? receipt.findingsHash : undefined,
+      }).target === 'remediation'
       : context.retryRemaining;
     const outcome = reconcileUnknown({ reconciliationMatched: true, resolvedRunState, priorChangeState: context.priorChangeState, resumeTaskStateOnSuccess: context.resumeTaskStateOnSuccess, retryRemaining, safeToRetry, newLeaseGeneration: resolvedRunState === 'abandoned' && safeToRetry });
     if (!outcome.ok) throw new ControllerError(3, outcome.code, `${outcome.detail}; issuer was not authenticated`, lifecycle);
@@ -2089,8 +2083,9 @@ export class Controller {
       },
     } : null;
     const attempts = Object.fromEntries(routes.map((route) => {
-      const consumed = failedAttemptCount(replay, route.task.id, route.task.revision);
-      return [route.task.id, { consumed, maximum: 4, nextKind: nextAttemptKind(consumed) }];
+      const consumed = failedAttemptCount(replay, route.task.id);
+      const nextKind = lifecycle.tasks[route.task.id]?.state === 'blocked' ? 'blocked' : consumed === 0 ? 'initial' : 'remediation';
+      return [route.task.id, { consumed, maximum: null, nextKind }];
     }));
     const historicClaimEvent = historicalEvents.filter((event) => event.type === 'run.claimed').at(-1);
     const historicClaim = historicClaimEvent ? record(historicClaimEvent.payload) as Claimed : undefined;
@@ -2570,27 +2565,18 @@ export class Controller {
     return result('TRANSITIONED', await this.state(repositoryRoot, changeId));
   }
 
-  private claimAttemptKind(events: JournalEvent[], lifecycle: LifecycleSnapshotState, taskId: string, taskRevision: number, sessionId: string | undefined): ClaimPlan['nextKind'] {
-    const priorFailures = failedAttemptCount(events, taskId, taskRevision);
-    const nextKind = nextAttemptKind(priorFailures);
-    if (nextKind === 'blocked') throw new ControllerError(7, 'BLOCKED', 'Task has exhausted its shared Gate/review attempt budget', lifecycle);
-    if (nextKind === 'fresh-debug') {
-      const previousClaims = events.filter((event) => event.type === 'run.claimed' && event.taskId === taskId);
-      const previousSessions = previousClaims.map((event) => record(event.payload).sessionId).filter((value): value is string => typeof value === 'string' && value.length > 0);
-      if (previousSessions.length !== previousClaims.length) throw new ControllerError(7, 'BLOCKED', 'Fresh debug requires recorded earlier session provenance', lifecycle);
-      if (!sessionId || previousSessions.includes(sessionId)) throw new ControllerError(5, 'CONFLICT', 'Fresh debug requires a new nonempty --session identity', lifecycle);
-    }
-    return nextKind;
+  private claimAttemptKind(events: JournalEvent[], taskId: string): ClaimPlan['nextKind'] {
+    return failedAttemptCount(events, taskId) === 0 ? 'initial' : 'remediation';
   }
 
-  private claimAdmission(events: JournalEvent[], lifecycle: LifecycleSnapshotState, taskId: string | undefined, sessionId: string | undefined): { routed: Routed; currentTaskState: 'ready' | 'remediation'; nextKind: 'initial' | 'remediation' | 'fresh-debug' } {
+  private claimAdmission(events: JournalEvent[], lifecycle: LifecycleSnapshotState, taskId: string | undefined): { routed: Routed; currentTaskState: 'ready' | 'remediation'; nextKind: 'initial' | 'remediation' | 'fresh-debug' } {
     const routed = taskId ? routedTask(events, taskId) : undefined;
     const currentTaskState = taskId ? lifecycle.tasks[taskId]?.state : undefined;
     if (lifecycle.changeState !== 'executing' || !routed || routed.task.id !== taskId || (currentTaskState !== 'ready' && currentTaskState !== 'remediation')) {
       const conflict = currentTaskState === 'leased' || currentTaskState === 'implementing' || Object.values(lifecycle.leases).some((lease) => lease.active);
       throw new ControllerError(conflict ? 5 : 3, conflict ? 'CONFLICT' : 'TRANSITION_FORBIDDEN', 'Task is not claimable', lifecycle);
     }
-    const nextKind = this.claimAttemptKind(events, lifecycle, taskId, routed.task.revision, sessionId);
+    const nextKind = this.claimAttemptKind(events, taskId);
     if (Object.values(lifecycle.leases).some((lease) => lease.active)) throw new ControllerError(5, 'CONFLICT', 'Active serial lease exists', lifecycle);
     return { routed, currentTaskState, nextKind };
   }
@@ -2632,7 +2618,7 @@ export class Controller {
       && (event.type === 'controller.candidate.registered' || event.type === 'controller.gate.result' || event.type === 'controller.submit.accepted'
         || event.type === 'run.unknown.context' || event.type.startsWith('gate.attempt.')));
     if (hasOutcome) throw new ControllerError(5, 'CONFLICT', 'Supersession refuses Runs with candidate, Gate, submit, or unknown-outcome history', lifecycle);
-    const nextKind = this.claimAttemptKind(events, lifecycle, taskId, routed.task.revision, sessionId);
+    const nextKind = this.claimAttemptKind(events, taskId);
     if (claimed.inputEntries && (!Array.isArray(claimed.inputEntries) || !claimed.inputEntries.every((entry) => typeof entry === 'string') || hash(`${TREE_IGNORE_POLICY_VERSION}\n${claimed.inputEntries.join('\n')}`) !== claimed.lease.inputTreeHash)) throw new ControllerError(5, 'CONFLICT', 'Old claim input entries do not match its tree identity');
     if (inputTree.hash !== claimed.lease.inputTreeHash) {
       if (!claimed.inputEntries) throw new ControllerError(5, 'CONFLICT', 'Supersession cannot adopt changed source without the old claim input entries', lifecycle);
@@ -2655,7 +2641,7 @@ export class Controller {
       const admitted = this.claimContinuationAdmission(events, lifecycle, taskId, supersededRunId, sessionId, await canonicalTreeHash(repositoryRoot), new Date());
       return { routed: admitted.routed, currentTaskState: 'ready', nextKind: admitted.nextKind, sessionId, inputTree: admitted.continuation.inputTree, continuation: admitted.continuation, designReceipt };
     }
-    const admitted = this.claimAdmission(events, lifecycle, taskId, sessionId);
+    const admitted = this.claimAdmission(events, lifecycle, taskId);
     return { ...admitted, sessionId, inputTree: await canonicalTreeHash(repositoryRoot), designReceipt };
   }
 
@@ -2728,7 +2714,7 @@ export class Controller {
         // TTL starts at durable admission; recovery later uses this recorded admission time.
         if (recovery) lease.expiresAt = new Date(preparedAt.getTime() + ttlMs).toISOString();
         if (recovery) this.validateClaimBatch(changeId, events, batch, preparedAt);
-        else this.claimAdmission(events, reduceJournal(events), taskId, sessionId);
+        else this.claimAdmission(events, reduceJournal(events), taskId);
       },
     });
     await writeSnapshotStrict(paths.runtime.snapshot, journal);
@@ -2899,11 +2885,16 @@ export class Controller {
         { changeId, taskId, taskRevision: routed.task.revision, leaseGeneration: claimed.lease.generation, type: 'controller.gate.result', payload: gateRecord },
       );
       if (settlement.status !== 'succeeded') {
-        const failureOrdinal = failedAttemptCount(logical, taskId, routed.task.revision) + 1;
-        const target = failureOrdinal >= 4 ? 'blocked' : 'remediation';
-        const blockerId = target === 'blocked' ? `gate-failure:${claimed.runId}` : undefined;
-        if (blockerId) inputs.push({ changeId, taskId, taskRevision: routed.task.revision, leaseGeneration: claimed.lease.generation, type: 'blocker.recorded', payload: { blockerId, reason: `gate ${settlement.status}` } });
-        inputs.push({ changeId, taskId, taskRevision: routed.task.revision, leaseGeneration: claimed.lease.generation, type: 'task.attempt.failed', payload: { runId: claimed.runId, status: settlement.status, ordinal: failureOrdinal, nextAttempt: nextAttemptKind(failureOrdinal) } });
+        const priorFailures = failedAttemptCount(logical, taskId);
+        const decision = decideFailedAttempt({
+          priorFailures,
+          previousFindingsHash: previousFindingsHash(logical, taskId),
+        });
+        const target = decision.target;
+        const failureOrdinal = priorFailures + 1;
+        const blockerId = target === 'blocked' ? `no-progress:${taskId}` : undefined;
+        if (blockerId) inputs.push({ changeId, taskId, taskRevision: routed.task.revision, leaseGeneration: claimed.lease.generation, type: 'blocker.recorded', payload: { blockerId, reason: 'no new evidence since the previous failure' } });
+        inputs.push({ changeId, taskId, taskRevision: routed.task.revision, leaseGeneration: claimed.lease.generation, type: 'task.attempt.failed', payload: { runId: claimed.runId, status: settlement.status, ordinal: failureOrdinal, nextAttempt: decision.nextKind } });
         const taskFailure = transitionTask('verifying', target, target === 'blocked' ? { blockerRecorded: true } : { retryRemaining: true, failureRecorded: true });
         if (!taskFailure.ok) throw new ControllerError(3, taskFailure.code, taskFailure.detail);
         inputs.push({ changeId, taskId, taskRevision: routed.task.revision, leaseGeneration: claimed.lease.generation, type: 'task.transition', payload: { from: 'verifying', to: target, ...(blockerId ? { blockerId } : {}) } });
@@ -3079,20 +3070,27 @@ export class Controller {
     const { lifecycle, routed, claimed } = await this.assertReviewCandidate(repositoryRoot, changeId, taskId, receipt, events);
     const { provenance, effectiveRisk, independentSession, fullAssessments } = this.reviewPolicy(routed, claimed, receipt, lifecycle);
     if (receipt.verdict === 'reject') {
-      const failureOrdinal = failedAttemptCount(events, taskId, routed.task.revision) + 1;
-      const target = failureOrdinal >= 4 ? 'blocked' : 'remediation';
+      const priorFailures = failedAttemptCount(events, taskId);
+      const currentFindingsHash = typeof receipt.findingsHash === 'string' ? receipt.findingsHash : undefined;
+      const decision = decideFailedAttempt({
+        priorFailures,
+        previousFindingsHash: previousFindingsHash(events, taskId),
+        currentFindingsHash,
+      });
+      const target = decision.target;
+      const failureOrdinal = priorFailures + 1;
       const remediation = transitionTask('reviewing', target, target === 'blocked' ? { blockerRecorded: true } : { retryRemaining: true, failureRecorded: true });
       if (!remediation.ok) throw new ControllerError(3, 'TRANSITION_FORBIDDEN', remediation.detail);
       const journal = new Journal(runtimePaths(repositoryRoot, changeId).journal);
       const paths = this.paths(repositoryRoot, changeId);
       const manifest = record(await loadYaml(paths.manifest));
       const projection = target === 'blocked' ? await buildProjection(repositoryRoot, changeId, paths.manifest, { ...manifest, state: 'blocked' }) : undefined;
-      const blockerId = target === 'blocked' ? `attempt-budget:${taskId}:${routed.task.revision}` : undefined;
+      const blockerId = target === 'blocked' ? `no-progress:${taskId}` : undefined;
       await commitControllerBatch({ repositoryRoot, changeId, journal, priorEvents: events, kind: 'review-rejected', projections: projection ? [projection] : [], faultAt: options.faultAt, operations: [
         { taskId, taskRevision: routed.task.revision, leaseGeneration: claimed.lease.generation, type: 'receipt.review.ingested', payload: { receipt, issuerAuthenticated: false } },
-        { taskId, taskRevision: routed.task.revision, leaseGeneration: claimed.lease.generation, type: 'task.attempt.failed', payload: { receiptId: receipt.receiptId, findingsHash: receipt.findingsHash, ordinal: failureOrdinal, nextAttempt: nextAttemptKind(failureOrdinal) } },
+        { taskId, taskRevision: routed.task.revision, leaseGeneration: claimed.lease.generation, type: 'task.attempt.failed', payload: { receiptId: receipt.receiptId, findingsHash: receipt.findingsHash, ordinal: failureOrdinal, nextAttempt: decision.nextKind } },
         { taskId, taskRevision: routed.task.revision, leaseGeneration: claimed.lease.generation, type: 'task.transition', payload: { from: 'review-required', to: 'reviewing' } },
-        ...(blockerId ? [{ taskId, taskRevision: routed.task.revision, leaseGeneration: claimed.lease.generation, type: 'blocker.recorded', payload: { blockerId, reason: 'shared attempt budget exhausted' } }] : []),
+        ...(blockerId ? [{ taskId, taskRevision: routed.task.revision, leaseGeneration: claimed.lease.generation, type: 'blocker.recorded', payload: { blockerId, reason: 'no new evidence since the previous failure' } }] : []),
         { taskId, taskRevision: routed.task.revision, leaseGeneration: claimed.lease.generation, type: 'task.transition', payload: { from: 'reviewing', to: target, ...(blockerId ? { blockerId } : {}) } },
         { taskId, taskRevision: routed.task.revision, leaseGeneration: claimed.lease.generation, type: 'lease.released', payload: { lease: claimed.lease, reason: 'review-rejected' } },
         ...(target === 'blocked' ? [{ type: 'change.transition', payload: { from: lifecycle.changeState, to: 'blocked', blockerId } }] : []),
@@ -3161,19 +3159,27 @@ export class Controller {
     const journal = new Journal(runtimePaths(repositoryRoot, changeId).journal);
     const inputs: JournalInput[] = [];
     if (resolvedRunState === 'abandoned' && safeToRetry) inputs.push({ changeId, taskId, taskRevision: claimed.lease.taskRevision, leaseGeneration: claimed.lease.generation, type: 'lease.abandoned', payload: { lease: claimed.lease } });
-    const failureOrdinal = resolvedRunState === 'failed' ? failedAttemptCount(events, taskId, claimed.lease.taskRevision) + 1 : undefined;
+    const priorFailures = resolvedRunState === 'failed' ? failedAttemptCount(events, taskId) : undefined;
+    const decision = priorFailures === undefined ? undefined : decideFailedAttempt({
+      priorFailures,
+      previousFindingsHash: previousFindingsHash(events, taskId),
+      currentFindingsHash: typeof receipt.findingsHash === 'string' ? receipt.findingsHash : undefined,
+    });
+    const failureOrdinal = priorFailures === undefined ? undefined : priorFailures + 1;
+    const blockerId = decision?.target === 'blocked' ? `no-progress:${taskId}` : undefined;
     inputs.push(
       { changeId, taskId, taskRevision: claimed.lease.taskRevision, leaseGeneration: claimed.lease.generation, type: 'receipt.reconciliation.ingested', payload: { receipt, issuerAuthenticated: false } },
       { changeId, taskId, taskRevision: claimed.lease.taskRevision, leaseGeneration: claimed.lease.generation, type: 'run.transition', payload: { runId, from: 'unknown', to: outcome.runState } },
     );
-    if (failureOrdinal !== undefined) {
+    if (failureOrdinal !== undefined && decision) {
       inputs.push(
-        { changeId, taskId, taskRevision: claimed.lease.taskRevision, leaseGeneration: claimed.lease.generation, type: 'task.attempt.failed', payload: { runId, status: 'failed', ordinal: failureOrdinal, nextAttempt: nextAttemptKind(failureOrdinal) } },
+        { changeId, taskId, taskRevision: claimed.lease.taskRevision, leaseGeneration: claimed.lease.generation, type: 'task.attempt.failed', payload: { runId, status: 'failed', ordinal: failureOrdinal, nextAttempt: decision.nextKind } },
         { changeId, taskId, taskRevision: claimed.lease.taskRevision, leaseGeneration: claimed.lease.generation, type: 'lease.released', payload: { lease: claimed.lease, reason: 'reconciled-failed' } },
       );
     }
+    if (blockerId) inputs.push({ changeId, taskId, taskRevision: claimed.lease.taskRevision, leaseGeneration: claimed.lease.generation, type: 'blocker.recorded', payload: { blockerId, reason: 'no new evidence since the previous failure' } });
     if (outcome.taskState !== 'blocked') inputs.push({ changeId, taskId, taskRevision: claimed.lease.taskRevision, leaseGeneration: context.leaseGeneration, type: 'task.transition', payload: { from: 'blocked', to: outcome.taskState } });
-    if (outcome.changeState !== lifecycle.changeState) inputs.push({ changeId, type: 'change.transition', payload: { from: lifecycle.changeState, to: outcome.changeState } });
+    if (outcome.changeState !== lifecycle.changeState) inputs.push({ changeId, type: 'change.transition', payload: { from: lifecycle.changeState, to: outcome.changeState, ...(blockerId ? { blockerId } : {}) } });
     const paths = this.paths(repositoryRoot, changeId);
     const manifest = record(await loadYaml(paths.manifest));
     const projection = await buildProjection(repositoryRoot, changeId, paths.manifest, { ...manifest, state: outcome.changeState });

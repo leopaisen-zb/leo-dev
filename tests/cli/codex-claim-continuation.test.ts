@@ -221,24 +221,32 @@ test('fresh claim validates an escaping receipt path before a drifted design sou
   expectExit(outcome, 2, 'VALIDATION_ERROR');
 }, 30_000);
 
-test('continuation retains consumed failures and fresh-debug requires a session distinct from every earlier claim', async () => {
-  const root = await fixture(); const changeId = 'continuation-fresh-debug-history';
-  await writeFile(join(root, 'core/gates/default.yaml'), YAML.stringify({ gates: [{ id: 'pass', argv: [process.execPath, '-e', 'process.exit(1)'], cwd: '.', timeoutSeconds: 10, required: true, replaySafety: 'pure', effectClass: 'local-verification', network: 'deny', environmentAllowlist: [], declaredWritePaths: [] }] }));
+test('continuation retains consumed failures and later claims stay remediation', async () => {
+  const root = await fixture(); const changeId = 'continuation-remediation-history';
   await approveAndDesign(root, changeId, new Date(Date.now() + 60_000).toISOString());
-  for (const session of ['producer-one', 'producer-two', 'producer-three']) {
-    const claim = cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--session', session); expectExit(claim, 0, 'CLAIMED');
-    expectExit(cli(root, 'run-gates', '--change', changeId, '--task', 'implementation', '--run', claim.envelope.state!.run.runId), 4, 'GATE_FAILED');
+  for (const n of [1, 2, 3]) {
+    const claim = cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--session', `producer-${n}`); expectExit(claim, 0, 'CLAIMED');
+    expectExit(cli(root, 'run-gates', '--change', changeId, '--task', 'implementation', '--run', claim.envelope.state!.run.runId), 0, 'GATES_PASSED');
+    expectExit(cli(root, 'submit', '--change', changeId, '--task', 'implementation'), 0, 'SUBMITTED_FOR_REVIEW');
+    const context = cli(root, 'status', '--change', changeId).envelope.state!.reviewContext;
+    const rejected = await runtimeReceipt(root, changeId, `reject-${n}.json`, {
+      ...context, receiptId: `reject-${n}-${randomUUID()}`, provenance: 'platform-attested', actorLabel: 'independent fixture reviewer',
+      sessionId: `reviewer-${n}`, findingsHash: hash(`reject-${n}`), verdict: 'reject', timestamp: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    expectExit(cli(root, 'review', '--change', changeId, '--task', 'implementation', '--receipt', rejected), 0, 'REVIEW_REJECTED');
   }
-  expect(cli(root, 'status', '--change', changeId).envelope.state).toMatchObject({ attempts: { implementation: { consumed: 3, nextKind: 'fresh-debug' } } });
-  const debug = cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--session', 'fresh-debugger', '--ttl', '80'); expectExit(debug, 0, 'CLAIMED');
-  await waitUntilExpired(debug.envelope.state!.run.lease.expiresAt as string);
+  expect(cli(root, 'status', '--change', changeId).envelope.state).toMatchObject({ attempts: { implementation: { consumed: 3, nextKind: 'remediation' } } });
+  const fourth = cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--session', 'producer-four', '--ttl', '80'); expectExit(fourth, 0, 'CLAIMED');
+  expect(fourth.envelope.state).toMatchObject({ run: { attemptKind: 'remediation' } });
+  await waitUntilExpired(fourth.envelope.state!.run.lease.expiresAt as string);
   const paths = runtimePaths(root, changeId); const beforeJournal = await readFile(paths.journal, 'utf8'); const beforeSnapshot = await readFile(paths.snapshot, 'utf8');
-  const replayedEarlierProducer = cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--supersede', debug.envelope.state!.run.runId, '--session', 'producer-one');
-  expectExit(replayedEarlierProducer, 5, 'CONFLICT');
+  const sameSession = cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--supersede', fourth.envelope.state!.run.runId, '--session', 'producer-four');
+  expectExit(sameSession, 5, 'CONFLICT');
   expect(await readFile(paths.journal, 'utf8')).toBe(beforeJournal); expect(await readFile(paths.snapshot, 'utf8')).toBe(beforeSnapshot);
-  const freshContinuation = cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--supersede', debug.envelope.state!.run.runId, '--session', 'brand-new-debugger');
+  const freshContinuation = cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--supersede', fourth.envelope.state!.run.runId, '--session', 'brand-new-debugger');
   expectExit(freshContinuation, 0, 'CLAIMED');
-  expect(freshContinuation.envelope.state).toMatchObject({ attempts: { implementation: { consumed: 3, nextKind: 'fresh-debug' } }, run: { attemptKind: 'fresh-debug', sessionId: 'brand-new-debugger' } });
+  expect(freshContinuation.envelope.state).toMatchObject({ attempts: { implementation: { consumed: 3, nextKind: 'remediation' } }, run: { attemptKind: 'remediation', sessionId: 'brand-new-debugger' } });
 }, 60_000);
 
 test('unexpired and out-of-allowed-path continuation admissions refuse without writing', async () => {
