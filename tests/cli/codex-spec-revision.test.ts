@@ -68,7 +68,7 @@ async function completeTask(root: string, changeId: string, taskId: string): Pro
   expect(cli(root, 'run-gates', '--change', changeId, '--task', taskId, '--run', runId.runId).status).toBe(0);
   expect(cli(root, 'submit', '--change', changeId, '--task', taskId).status).toBe(0);
   const context = cli(root, 'status', '--change', changeId).envelope.state!.reviewContext as Record<string, string | number>;
-  const path = await receipt(`review-${taskId}`, { ...context, receiptId: `${changeId}-${taskId}-review-${Date.now()}-${Math.random()}`, provenance: 'platform-attested', actorLabel: 'TEST-ONLY independent reviewer; issuer not authenticated', sessionId: `review-session-${taskId}`, findingsHash: sha256(`no findings ${taskId}`), verdict: 'pass', timestamp: new Date().toISOString(), expiresAt: new Date(Date.now() + 60 * 60_000).toISOString() });
+  const path = await receipt(`review-${taskId}`, { ...context, receiptId: `${changeId}-${taskId}-review-${Date.now()}-${Math.random()}`, provenance: 'human-confirmed', actorLabel: 'TEST-ONLY independent reviewer; issuer not authenticated', sessionId: `review-session-${taskId}`, findingsHash: sha256(`no findings ${taskId}`), verdict: 'pass', timestamp: new Date().toISOString(), expiresAt: new Date(Date.now() + 60 * 60_000).toISOString() });
   expect(cli(root, 'review', '--change', changeId, '--task', taskId, '--receipt', path).status).toBe(0);
   return path;
 }
@@ -808,7 +808,7 @@ describe('compiled public specification revision', () => {
     const claimed = cli(root, 'claim', '--change', changeId, '--task', 'task-a'); const runId = (claimed.envelope.state!.run as { runId: string }).runId;
     expect(cli(root, 'run-gates', '--change', changeId, '--task', 'task-a', '--run', runId).status).toBe(0); expect(cli(root, 'submit', '--change', changeId, '--task', 'task-a').status).toBe(0);
     const context = cli(root, 'status', '--change', changeId).envelope.state!.reviewContext as Record<string, unknown>;
-    const rejection = await receipt('settled-remediation-review', { ...context, receiptId: 'settled-remediation-review', provenance: 'platform-attested', actorLabel: 'TEST-ONLY fixture reviewer; issuer not authenticated', sessionId: 'settled-remediation-session', findingsHash: sha256('bounded finding'), verdict: 'reject', timestamp: new Date().toISOString(), expiresAt: new Date(Date.now() + 60 * 60_000).toISOString() });
+    const rejection = await receipt('settled-remediation-review', { ...context, receiptId: 'settled-remediation-review', provenance: 'human-confirmed', actorLabel: 'TEST-ONLY fixture reviewer; issuer not authenticated', sessionId: 'settled-remediation-session', findingsHash: sha256('bounded finding'), verdict: 'reject', timestamp: new Date().toISOString(), expiresAt: new Date(Date.now() + 60 * 60_000).toISOString() });
     expect(cli(root, 'review', '--change', changeId, '--task', 'task-a', '--receipt', rejection).status).toBe(0);
     expect(cli(root, 'status', '--change', changeId).envelope.state).toMatchObject({ tasks: { 'task-a': { state: 'remediation' } }, leases: { 'task-a': { active: false } } });
     const applied = await applyRevisionFor(root, changeId, 'spec-v2.md', 'plan-v2.json', 'v2');

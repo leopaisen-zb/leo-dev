@@ -204,3 +204,21 @@ test('journaled lite review rejects same-session agent-asserted provenance', asy
   });
   expectExit(cli(root, 'review', '--change', 'lite-review', '--task', 'a', '--receipt', path), 5, 'CONFLICT');
 }, 60_000);
+
+test('journaled review rejects platform-attested provenance when claim omitted session', async () => {
+  const root = await fixture(); await executingPlan(root, 'missing-claim-session');
+  const claim = cli(root, 'claim', '--change', 'missing-claim-session', '--task', 'a');
+  expectExit(claim, 0, 'CLAIMED');
+  await mkdir(join(root, 'src'), { recursive: true });
+  await writeFile(join(root, 'src/a.ts'), '// a\n');
+  expectExit(cli(root, 'run-gates', '--change', 'missing-claim-session', '--task', 'a', '--run', claim.envelope.state.run.runId), 0, 'GATES_PASSED');
+  expectExit(cli(root, 'submit', '--change', 'missing-claim-session', '--task', 'a'), 0, 'SUBMITTED_FOR_REVIEW');
+  const context = cli(root, 'status', '--change', 'missing-claim-session').envelope.state.reviewContext;
+  const path = await receipt(root, {
+    receiptId: randomUUID(), provenance: 'platform-attested', actorLabel: 'reviewer',
+    sessionId: 'reviewer', runId: context.runId, taskId: context.taskId, taskRevision: context.taskRevision,
+    leaseGeneration: context.leaseGeneration, specHash: context.specHash, taskHash: context.taskHash,
+    treeHash: context.treeHash, findingsHash: hash('pass'), verdict: 'pass', timestamp: now(), expiresAt: later(),
+  });
+  expectExit(cli(root, 'review', '--change', 'missing-claim-session', '--task', 'a', '--receipt', path), 5, 'CONFLICT');
+}, 60_000);

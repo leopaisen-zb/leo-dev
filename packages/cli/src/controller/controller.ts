@@ -1887,7 +1887,10 @@ export class Controller {
     if (!projectedLease?.active || projectedLease.generation !== claimed.lease.generation || (!recovery && Date.parse(claimed.lease.expiresAt) <= Date.now())) throw new ControllerError(5, 'CONFLICT', 'Submitted candidate lease is no longer current', lifecycle);
     if ((await canonicalTreeHash(repositoryRoot)).hash !== submitted.treeHash) throw new ControllerError(5, 'CONFLICT', 'Controlled tree has drifted from the submitted Gate-bound candidate', lifecycle);
     const independent = receipt.provenance === 'human-confirmed'
-      || (receipt.provenance === 'platform-attested' && typeof receipt.sessionId === 'string' && receipt.sessionId !== claimed.sessionId);
+      || (receipt.provenance === 'platform-attested'
+        && typeof claimed.sessionId === 'string' && claimed.sessionId.length > 0
+        && typeof receipt.sessionId === 'string' && receipt.sessionId.length > 0
+        && receipt.sessionId !== claimed.sessionId);
     if (!independent) {
       throw new ControllerError(5, 'CONFLICT', 'Platform review cannot prove an independent session from the claimed implementation; issuer was not authenticated', lifecycle);
     }

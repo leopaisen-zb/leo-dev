@@ -105,7 +105,7 @@ async function omitReleasedPhase(root: string, changeId: string): Promise<void> 
 
 async function reviewReceipt(context: Record<string, unknown>, overrides: Record<string, unknown> = {}): Promise<string> {
   return receiptFile({
-    receiptId: `review-${randomUUID()}`, provenance: 'platform-attested', actorLabel: 'label only; issuer not authenticated',
+    receiptId: `review-${randomUUID()}`, provenance: 'human-confirmed', actorLabel: 'label only; issuer not authenticated',
     sessionId: `session-${randomUUID()}`, runId: context.runId, taskId: context.taskId,
     taskRevision: context.taskRevision, leaseGeneration: context.leaseGeneration,
     specHash: context.specHash, taskHash: context.taskHash, treeHash: context.treeHash,
@@ -265,7 +265,7 @@ describe('compiled public CLI contract', () => {
     const status = cli(root, 'status', '--change', changeId);
     const review = (status.envelope.state as { reviewContext: Record<string, unknown> }).reviewContext;
     const receipt = await receiptFile({
-      receiptId: 'self-review', provenance: 'platform-attested',
+      receiptId: 'self-review', provenance: 'human-confirmed',
       actorLabel: 'CLI fixture self-review (label only; issuer not authenticated)',
       sessionId: 'fixture-session', runId: review.runId, taskId: review.taskId,
       taskRevision: review.taskRevision, leaseGeneration: review.leaseGeneration,
@@ -466,7 +466,7 @@ describe('compiled public CLI contract', () => {
     const reviewStatus = cli(root, 'status', '--change', 'unknown-change');
     const review = (reviewStatus.envelope.state as { reviewContext: Record<string, unknown> }).reviewContext;
     const reviewReceipt = await receiptFile({
-      receiptId: 'reconciled-review', provenance: 'platform-attested', actorLabel: 'reconciled labelled self-review',
+      receiptId: 'reconciled-review', provenance: 'human-confirmed', actorLabel: 'reconciled labelled self-review',
       sessionId: 'reconciled-session', runId: review.runId, taskId: review.taskId,
       taskRevision: review.taskRevision, leaseGeneration: review.leaseGeneration,
       specHash: review.specHash, taskHash: review.taskHash, treeHash: review.treeHash,
@@ -513,7 +513,7 @@ describe('compiled public CLI contract', () => {
     expectExit(cli(root, 'submit', '--change', 'dry-change', '--task', 'task-1'), 0);
     const status = cli(root, 'status', '--change', 'dry-change');
     const reviewContext = (status.envelope.state as { reviewContext: Record<string, unknown> }).reviewContext;
-    const review = await receiptFile({ receiptId: 'dry-review', provenance: 'platform-attested', actorLabel: 'dry labelled reviewer', sessionId: 'dry-session', runId: reviewContext.runId, taskId: reviewContext.taskId, taskRevision: reviewContext.taskRevision, leaseGeneration: reviewContext.leaseGeneration, specHash: reviewContext.specHash, taskHash: reviewContext.taskHash, treeHash: reviewContext.treeHash, findingsHash: hash('dry'), verdict: 'pass', timestamp: receiptTimestamp, expiresAt: receiptExpiry });
+    const review = await receiptFile({ receiptId: 'dry-review', provenance: 'human-confirmed', actorLabel: 'dry labelled reviewer', sessionId: 'dry-session', runId: reviewContext.runId, taskId: reviewContext.taskId, taskRevision: reviewContext.taskRevision, leaseGeneration: reviewContext.leaseGeneration, specHash: reviewContext.specHash, taskHash: reviewContext.taskHash, treeHash: reviewContext.treeHash, findingsHash: hash('dry'), verdict: 'pass', timestamp: receiptTimestamp, expiresAt: receiptExpiry });
     const validApproval = await receiptFile({ receiptId: 'dry-approval', provenance: 'human-confirmed', actorLabel: 'dry', decision: 'grant', grantedAt: receiptTimestamp, expiresAt: receiptExpiry, changeId: 'dry-change', scope: 'change', operationKind: 'spec-approval', decisionFingerprint: 'a'.repeat(64), gateDefinitionFingerprint: 'b'.repeat(64), argvFingerprint: 'c'.repeat(64), cwdFingerprint: 'd'.repeat(64), environmentFingerprint: 'e'.repeat(64), inputFingerprint: 'f'.repeat(64) });
     const waiver = await receiptFile({ receiptId: 'dry-waiver', provenance: 'human-confirmed', actorLabel: 'dry', scope: 'change', changeId: 'dry-change', risk: 'lite', waivedRequirements: ['optional-review-detail'], timestamp: receiptTimestamp, expiresAt: receiptExpiry });
     const resolution = await receiptFile({ receiptId: 'dry-resolution', blockerId: 'dry-blocker', provenance: 'human-confirmed', actorLabel: 'dry', decision: 'resume', scope: 'change', changeId: 'dry-change', artifactHashes: ['a'.repeat(64)], targetRecoveryState: 'executing', timestamp: receiptTimestamp, expiresAt: receiptExpiry });
