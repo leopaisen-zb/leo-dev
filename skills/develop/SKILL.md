@@ -13,7 +13,7 @@ description: 个人跨项目软件开发入口。用于开发功能、实现方�
 2. Direct answers and read-only review/diagnosis bypass durable change state. 即使显式 `$develop`，也不创建规格、任务或生命周期状态。
 3. Any product-code or behavior change enters the full cycle. 不再对微小明确编辑走轻量旁路。
 4. 对其他工作先检查 controller/current state 和已有合格规格；reuse it without a second interview or competing specification.
-5. 目标和范围在本会话对齐且用户说「开工」后写入规格与计划并继续（开工授权）。不必等用户再批规格文件。目标变了才停下来问。ask exactly one highest-leverage material question at a time。
+5. 目标和范围在本会话对齐且用户说「开工」后，运行 `leo-dev start --change <id> --goal <text>`，写入规格与计划并继续（开工授权）。不必等用户再批规格文件。目标变了才停下来问。ask exactly one highest-leverage material question at a time。
 6. Do not read every reference before starting. 只在当前缺口需要时再读下面链接。
 
 ## 完整循环

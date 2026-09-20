@@ -103,7 +103,7 @@ type UnknownContext = {
 
 const moduleRepositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
-const stateChanging = new Set(['init', 'route', 'revise', 'transition', 'claim', 'run-gates', 'submit', 'review', 'approve', 'waive', 'resolve', 'reconcile', 'resume']);
+const stateChanging = new Set(['init', 'route', 'start', 'revise', 'transition', 'claim', 'run-gates', 'submit', 'review', 'approve', 'waive', 'resolve', 'reconcile', 'resume']);
 const maxGateOutputBytes = 64 * 1024;
 type JournalInput = ControllerBatchOperation & { changeId?: string };
 
@@ -139,6 +139,23 @@ function latestPayload<T>(events: JournalEvent[], type: string): T | undefined {
 function latestTaskPayload<T>(events: JournalEvent[], type: string, taskId: string): T | undefined {
   const event = events.filter((candidate) => candidate.type === type && candidate.taskId === taskId).at(-1);
   return event ? record(event.payload) as T : undefined;
+}
+
+function currentStartAuthorization(events: JournalEvent[]): { goal: string; goalHash: string } | undefined {
+  let latestIndex = -1;
+  for (let index = 0; index < events.length; index += 1) {
+    if (events[index]!.type === 'controller.start.authorized') latestIndex = index;
+  }
+  if (latestIndex < 0) return undefined;
+  const competingReject = events.slice(latestIndex + 1).some((event) => {
+    if (event.type !== 'receipt.approval.ingested') return false;
+    const receipt = record(record(event.payload).receipt);
+    return receipt.operationKind === 'spec-approval' && receipt.decision === 'reject';
+  });
+  if (competingReject) return undefined;
+  const payload = record(events[latestIndex]!.payload);
+  if (typeof payload.goal !== 'string' || typeof payload.goalHash !== 'string') return undefined;
+  return { goal: payload.goal, goalHash: payload.goalHash };
 }
 
 export function teamMutationBarrierReason(events: JournalEvent[]): string | undefined {
@@ -1640,7 +1657,7 @@ export class Controller {
       specResolves: !!initialized,
       schemaValid: true,
       unresolvedDecisionsEmpty: Array.isArray(manifest.unresolvedDecisions) && manifest.unresolvedDecisions.length === 0,
-      approvalReceiptMatches: approvalMatches,
+      approvalReceiptMatches: approvalMatches || currentStartAuthorization(events) !== undefined,
       validTasks: routes.length > 0,
       gateRegistry,
       runtimeWorkspace: true,
@@ -2195,6 +2212,18 @@ export class Controller {
     ] });
     await writeSnapshotStrict(paths.runtime.snapshot, journal);
     return result(`ROUTED_${routedRisk(routeds).toUpperCase()}`, await this.state(repositoryRoot, changeId));
+  }
+
+  async start(options: CommandOptions): Promise<CommandResult> {
+    const repositoryRoot = await realpath(this.repository(options));
+    const changeId = this.changeId(options);
+    const goal = stringOption(options, 'goal')!;
+    const events = await this.readEvents(repositoryRoot, changeId);
+    const goalHash = hash(goal);
+    const journal = new Journal(runtimePaths(repositoryRoot, changeId).journal);
+    await commitControllerBatch({ repositoryRoot, changeId, journal, priorEvents: events, kind: 'start', faultAt: options.faultAt, operations: [{ type: 'controller.start.authorized', payload: { goal, goalHash } }] });
+    await writeSnapshotStrict(runtimePaths(repositoryRoot, changeId).snapshot, journal);
+    return result('START_AUTHORIZED', { ...(await this.state(repositoryRoot, changeId)), goal, goalHash });
   }
 
   async revise(options: CommandOptions): Promise<CommandResult> {

@@ -26,6 +26,7 @@ export type CommandOptions = Record<string, unknown> & {
   task?: string;
   recoverReview?: boolean;
   receipt?: string;
+  goal?: string;
 };
 
 export class ControllerError extends Error {

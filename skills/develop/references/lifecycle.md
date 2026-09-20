@@ -7,7 +7,7 @@ Existing change: run `leo-dev inspect --change <id>` or `leo-dev status --change
 以下示例在目标仓库根目录执行；从其他目录调用时，回执使用已核对的绝对路径，不能假定 `--repo` 会改变所有输入路径的解析基准。
 
 New change: run `leo-dev init --change <id> --spec <path>`, then `leo-dev inspect --change <id>`, then the reviewed `leo-dev route` path. `route` accepts the legacy `--task/--gate` Lite form and a repository task plan. Its committed route retains the maximum actual task risk (`lite`, `standard`, or `full`); a caller must not silently downgrade a Standard/Full plan to use a Lite path.
-用户说「开工」后写入规格与计划并继续（开工授权），再走已审查的 `leo-dev route` 路径。不必等用户再批规格文件。
+用户说「开工」后先运行 `leo-dev start --change <id> --goal <text>`，写入规格与计划并继续（开工授权），再走已审查的 `leo-dev route` 路径。不必等用户再批规格文件。
 
 Lite may continue from `spec-approved` to `task-ready`. Standard/Full must enter `design-review`, obtain a current design receipt, then enter `design-approved` before `task-ready`. A current independent `reject` receipt may return only `design-review → spec-approved` in one transition batch; it retains the original specification approval and task revisions. Edit the rejected design only after that return, request a new design review with the repaired bytes, and obtain a fresh independent `pass` before `task-ready`. The same receipt must exactly bind the current change/spec/plan/design/producer context, be current and unused, and provenance/session labels remain unauthenticated audit metadata. 缺 Node、controller 或所需 transition 时如实报告 prerequisite/unsupported，不模拟状态。
 
@@ -33,7 +33,7 @@ The CI receipt and verifier evidence bind the change, authority, candidate, proo
 
 单任务保留上面的 `--task/--gate` Lite 兼容形式。多任务使用仓库内独立输入文件运行 `leo-dev route --change <id> --plan <path>`，不手改控制器生成的 tasks.yaml，也不重复 route 追加任务。输入是 `schemaVersion: 1` 和 `tasks`：每项有 `id`、`revision: 1`、`state`、`dependsOn`、`allowedPaths`、非空 `acceptance`、一个 `gateIds` 项，以及 `risk: lite|standard|full`。根任务 state 为 ready，其余为 pending；依赖引用唯一任务 ID，每项只使用一个已有的聚合 gate。可选 `role: integration` 最多一个；它必须传递依赖所有其他任务，且不能有后继。没有 integration task 的旧计划仍可执行，但不能生成 release evidence。allowedPaths 优先使用具体仓库相对文件，例如 `src/cart.ts`；需要目录内文件时用 `src/**`，不能把单独的 `src` 当作递归目录授权。当前仅支持路径片段中的 `*` 和独立 `**` 片段，不是完整 glob 引擎。`.` 是兼容的广泛授权，新计划避免使用。
 
-若仍在 triage，沿用真实的 `transition --scope change --to discovery`、`spec-review`、匹配既有授权的 `approve --receipt <path>` 和 `spec-approved`。每步先核对当前状态；approve 回执按当前 `state.approvalContext` 绑定真实已有决定，不能凭本地标签制造人类批准。已进入 executing 的变更不重跑上述步骤。
+若仍在 triage，沿用真实的 `transition --scope change --to discovery`、`spec-review`、匹配既有授权的 `approve --receipt <path>` 和 `spec-approved`。当前未过期的 `leo-dev start --change <id> --goal <text>` 授权可代替 spec-approval 人签进入 `spec-approved`；人签 approve 路径仍可用。每步先核对当前状态；approve 回执按当前 `state.approvalContext` 绑定真实已有决定，不能凭本地标签制造人类批准。已进入 executing 的变更不重跑上述步骤。
 
 Lite 接着进入 `task-ready` 和 `executing`。Standard/Full 先使用仓库相对的设计源和实际 producer session：
 
