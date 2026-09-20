@@ -384,7 +384,7 @@ describe.each(['lite', 'standard'] as const)('normally admitted %s review fixtur
 
   test(`shows a normally admitted ${risk} review from its certified submission`, async () => {
     const { root, submitted } = prepared;
-    const path = await receiptFile(`${risk}-review`, reviewReceipt(submitted, risk === 'lite' ? { provenance: 'agent-asserted', sessionId: 'reviewer-lite' } : {}));
+    const path = await receiptFile(`${risk}-review`, reviewReceipt(submitted, risk === 'lite' ? { provenance: 'platform-attested', sessionId: 'reviewer-lite' } : {}));
     const reviewed = cli(root, 'review', '--change', 'board', '--task', 'board-task', '--receipt', path);
     expect(reviewed.status, JSON.stringify(reviewed.envelope)).toBe(0);
 
@@ -520,7 +520,7 @@ test.each(['missing', 'wrong', 'predating'] as const)('refuses a recovered candi
 
 test('keeps the original certified submit observable through legitimate expired-review recovery', async () => {
   const { root, submitted, recoveryId } = await recoveredSubmittedFixture();
-  const receipt = await receiptFile('recovered-review', reviewReceipt(submitted, { recoveryId, provenance: 'agent-asserted', sessionId: 'recovery-reviewer', timestamp: new Date().toISOString() }));
+  const receipt = await receiptFile('recovered-review', reviewReceipt(submitted, { recoveryId, provenance: 'platform-attested', sessionId: 'recovery-reviewer', timestamp: new Date().toISOString() }));
   const reviewed = cli(root, 'review', '--change', 'board', '--task', 'board-task', '--receipt', receipt);
   expect(reviewed.status, JSON.stringify(reviewed.envelope)).toBe(0);
 

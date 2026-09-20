@@ -219,9 +219,9 @@ test('rejects integration plans that do not transitively depend on every other t
 
 test('Standard review rejects agent assertions and the implementer platform session without consuming the attempt', async () => {
   const root = await fixture('standard'); const context = await advanceToSubmitted(root, 'standard-review'); const journal = join(root, '.leo-dev/runtime/standard-review/journal.ndjson'); const before = await readFile(journal, 'utf8');
-  expectExit(cli(root, 'review', '--change', 'standard-review', '--task', 'implementation', '--receipt', await review(root, context, { provenance: 'agent-asserted' }), '--dry-run'), 3, 'TRANSITION_FORBIDDEN');
+  expectExit(cli(root, 'review', '--change', 'standard-review', '--task', 'implementation', '--receipt', await review(root, context, { provenance: 'agent-asserted' }), '--dry-run'), 5, 'CONFLICT');
   expect(await readFile(journal, 'utf8')).toBe(before);
-  expectExit(cli(root, 'review', '--change', 'standard-review', '--task', 'implementation', '--receipt', await review(root, context, { provenance: 'agent-asserted' })), 3, 'TRANSITION_FORBIDDEN');
+  expectExit(cli(root, 'review', '--change', 'standard-review', '--task', 'implementation', '--receipt', await review(root, context, { provenance: 'agent-asserted' })), 5, 'CONFLICT');
   expect(await readFile(journal, 'utf8')).toBe(before);
   expectExit(cli(root, 'review', '--change', 'standard-review', '--task', 'implementation', '--receipt', await review(root, context, { sessionId: 'producer' })), 5, 'CONFLICT');
   expect(await readFile(journal, 'utf8')).toBe(before);

@@ -1886,8 +1886,9 @@ export class Controller {
     const projectedLease = lifecycle.leases[taskId];
     if (!projectedLease?.active || projectedLease.generation !== claimed.lease.generation || (!recovery && Date.parse(claimed.lease.expiresAt) <= Date.now())) throw new ControllerError(5, 'CONFLICT', 'Submitted candidate lease is no longer current', lifecycle);
     if ((await canonicalTreeHash(repositoryRoot)).hash !== submitted.treeHash) throw new ControllerError(5, 'CONFLICT', 'Controlled tree has drifted from the submitted Gate-bound candidate', lifecycle);
-    if (routed.task.risk !== 'lite' && receipt.provenance === 'platform-attested'
-      && (!claimed.sessionId || receipt.sessionId === claimed.sessionId)) {
+    const independent = receipt.provenance === 'human-confirmed'
+      || (receipt.provenance === 'platform-attested' && typeof receipt.sessionId === 'string' && receipt.sessionId !== claimed.sessionId);
+    if (!independent) {
       throw new ControllerError(5, 'CONFLICT', 'Platform review cannot prove an independent session from the claimed implementation; issuer was not authenticated', lifecycle);
     }
     if (routed.task.risk === 'full' && !this.fullReviewAssessments(receipt, submitted, claimed, events)) {

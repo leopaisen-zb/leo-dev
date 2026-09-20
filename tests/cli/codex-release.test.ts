@@ -75,7 +75,7 @@ async function approve(root: string, changeId: string): Promise<void> {
 
 async function reviewReceipt(root: string, context: Record<string, unknown>, sessionId: string, overrides: Record<string, unknown> = {}): Promise<string> {
   return receipt(root, {
-    receiptId: `review-${randomUUID()}`, provenance: 'agent-asserted', actorLabel: 'fixture reviewer label', sessionId,
+    receiptId: `review-${randomUUID()}`, provenance: 'platform-attested', actorLabel: 'fixture reviewer label', sessionId,
     runId: context.runId, taskId: context.taskId, taskRevision: context.taskRevision, leaseGeneration: context.leaseGeneration,
     specHash: context.specHash, taskHash: context.taskHash, treeHash: context.treeHash, findingsHash: hash('no findings'), verdict: 'pass',
     timestamp: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(), ...overrides,
@@ -117,7 +117,7 @@ async function acceptAggregateStandardReview(root: string, changeId: string): Pr
   const selfReview = cli(root, 'review', '--change', changeId, '--task', 'aggregate', '--receipt', self);
   expectExit(selfReview, 5, 'CONFLICT');
   expect(await readFile(journal, 'utf8')).toBe(journalBeforeSelf);
-  const assertedIndependent = await reviewReceipt(root, before.reviewContext, 'integration-agent-reviewer');
+  const assertedIndependent = await reviewReceipt(root, before.reviewContext, 'integration-agent-reviewer', { provenance: 'agent-asserted' });
   const independentAssertion = cli(root, 'review', '--change', changeId, '--task', 'aggregate', '--receipt', assertedIndependent);
   expectExit(independentAssertion, 5, 'CONFLICT');
   expect(await readFile(journal, 'utf8')).toBe(journalBeforeSelf);

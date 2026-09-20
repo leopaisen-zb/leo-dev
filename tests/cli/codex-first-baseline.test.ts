@@ -192,7 +192,7 @@ describe('Codex-first C2 acceptance regressions', () => {
     const context = await advanceToReview(root, 'review-gap');
     const receipt = await receiptFile({
       receiptId: 'candidate-bound-rejection',
-      provenance: 'agent-asserted',
+      provenance: 'platform-attested',
       actorLabel: 'fixture reviewer',
       sessionId: 'fixture-review-session',
       runId: context.runId,

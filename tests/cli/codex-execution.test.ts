@@ -87,7 +87,7 @@ async function passReview(root: string, change: string, task: string, verdict: '
   expectExit(cli(root, 'run-gates', '--change', change, '--task', task, '--run', claim.envelope.state.run.runId, '--dry-run'), 0, 'DRY_RUN');
   expectExit(cli(root, 'run-gates', '--change', change, '--task', task, '--run', claim.envelope.state.run.runId), 0, 'GATES_PASSED'); expectExit(cli(root, 'submit', '--change', change, '--task', task), 0, 'SUBMITTED_FOR_REVIEW');
   const context = cli(root, 'status', '--change', change).envelope.state.reviewContext;
-  const path = await receipt(root, { receiptId: randomUUID(), provenance: 'agent-asserted', actorLabel: 'fixture', sessionId: session, runId: context.runId, taskId: context.taskId, taskRevision: context.taskRevision, leaseGeneration: context.leaseGeneration, specHash: context.specHash, taskHash: context.taskHash, treeHash: context.treeHash, findingsHash: hash(verdict), verdict, timestamp: now(), expiresAt: later() });
+  const path = await receipt(root, { receiptId: randomUUID(), provenance: 'platform-attested', actorLabel: 'fixture', sessionId: session, runId: context.runId, taskId: context.taskId, taskRevision: context.taskRevision, leaseGeneration: context.leaseGeneration, specHash: context.specHash, taskHash: context.taskHash, treeHash: context.treeHash, findingsHash: hash(verdict), verdict, timestamp: now(), expiresAt: later() });
   const reviewed = cli(root, 'review', '--change', change, '--task', task, '--receipt', path); expectExit(reviewed, 0, verdict === 'pass' ? 'LITE_REVIEW_ACCEPTED_UNAUTHENTICATED' : 'REVIEW_REJECTED'); return reviewed.envelope;
 }
 afterEach(async () => { await Promise.all(temporary.splice(0).map((path) => rm(path, { recursive: true, force: true }))); });
@@ -121,7 +121,7 @@ test('synthetic distinct review findings keep remediating past four attempts', a
     expectExit(cli(root, 'run-gates', '--change', 'new-findings', '--task', 'task', '--run', claim.envelope.state.run.runId), 0, 'GATES_PASSED');
     expectExit(cli(root, 'submit', '--change', 'new-findings', '--task', 'task'), 0, 'SUBMITTED_FOR_REVIEW');
     const context = cli(root, 'status', '--change', 'new-findings').envelope.state.reviewContext;
-    const rejected = await receipt(root, { receiptId: `reject-${n}`, provenance: 'agent-asserted', actorLabel: 'fixture', sessionId: `review-${n}`, runId: context.runId, taskId: context.taskId, taskRevision: context.taskRevision, leaseGeneration: context.leaseGeneration, specHash: context.specHash, taskHash: context.taskHash, treeHash: context.treeHash, findingsHash: hash(`reject-${n}`), verdict: 'reject', timestamp: now(), expiresAt: later() });
+    const rejected = await receipt(root, { receiptId: `reject-${n}`, provenance: 'platform-attested', actorLabel: 'fixture', sessionId: `review-${n}`, runId: context.runId, taskId: context.taskId, taskRevision: context.taskRevision, leaseGeneration: context.leaseGeneration, specHash: context.specHash, taskHash: context.taskHash, treeHash: context.treeHash, findingsHash: hash(`reject-${n}`), verdict: 'reject', timestamp: now(), expiresAt: later() });
     expectExit(cli(root, 'review', '--change', 'new-findings', '--task', 'task', '--receipt', rejected), 0, 'REVIEW_REJECTED');
     expect(cli(root, 'status', '--change', 'new-findings').envelope.state.changeState).not.toBe('blocked');
   }
@@ -176,7 +176,7 @@ test('synthetic review receipt IDs are single-use even when a later candidate ha
     expectExit(cli(root, 'run-gates', '--change', 'review-replay', '--task', 'task', '--run', claim.envelope.state.run.runId), 0, 'GATES_PASSED');
     expectExit(cli(root, 'submit', '--change', 'review-replay', '--task', 'task'), 0, 'SUBMITTED_FOR_REVIEW');
     const context = cli(root, 'status', '--change', 'review-replay').envelope.state.reviewContext;
-    const path = await receipt(root, { receiptId: 'reused-review-id', provenance: 'agent-asserted', actorLabel: 'fixture', sessionId: session, runId: context.runId, taskId: context.taskId, taskRevision: context.taskRevision, leaseGeneration: context.leaseGeneration, specHash: context.specHash, taskHash: context.taskHash, treeHash: context.treeHash, findingsHash: hash(session), verdict: 'reject', timestamp: now(), expiresAt: later() });
+    const path = await receipt(root, { receiptId: 'reused-review-id', provenance: 'platform-attested', actorLabel: 'fixture', sessionId: `review-${session}`, runId: context.runId, taskId: context.taskId, taskRevision: context.taskRevision, leaseGeneration: context.leaseGeneration, specHash: context.specHash, taskHash: context.taskHash, treeHash: context.treeHash, findingsHash: hash(session), verdict: 'reject', timestamp: now(), expiresAt: later() });
     const review = cli(root, 'review', '--change', 'review-replay', '--task', 'task', '--receipt', path);
     if (session === 'one') expectExit(review, 0, 'REVIEW_REJECTED');
     else {
@@ -185,4 +185,22 @@ test('synthetic review receipt IDs are single-use even when a later candidate ha
     }
   }
   expect(cli(root, 'status', '--change', 'review-replay').envelope.state.attempts.task).toMatchObject({ consumed: 1, nextKind: 'remediation' });
+}, 60_000);
+
+test('journaled lite review rejects same-session agent-asserted provenance', async () => {
+  const root = await fixture(); await executingPlan(root, 'lite-review');
+  const claim = cli(root, 'claim', '--change', 'lite-review', '--task', 'a', '--session', 'same');
+  expectExit(claim, 0, 'CLAIMED');
+  await mkdir(join(root, 'src'), { recursive: true });
+  await writeFile(join(root, 'src/a.ts'), '// a\n');
+  expectExit(cli(root, 'run-gates', '--change', 'lite-review', '--task', 'a', '--run', claim.envelope.state.run.runId), 0, 'GATES_PASSED');
+  expectExit(cli(root, 'submit', '--change', 'lite-review', '--task', 'a'), 0, 'SUBMITTED_FOR_REVIEW');
+  const context = cli(root, 'status', '--change', 'lite-review').envelope.state.reviewContext;
+  const path = await receipt(root, {
+    receiptId: randomUUID(), provenance: 'agent-asserted', actorLabel: 'same-session',
+    sessionId: 'same', runId: context.runId, taskId: context.taskId, taskRevision: context.taskRevision,
+    leaseGeneration: context.leaseGeneration, specHash: context.specHash, taskHash: context.taskHash,
+    treeHash: context.treeHash, findingsHash: hash('pass'), verdict: 'pass', timestamp: now(), expiresAt: later(),
+  });
+  expectExit(cli(root, 'review', '--change', 'lite-review', '--task', 'a', '--receipt', path), 5, 'CONFLICT');
 }, 60_000);
