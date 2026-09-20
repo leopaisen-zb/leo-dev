@@ -10,7 +10,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryUrl = 'https://github.com/leopaisen-zb/leo-dev';
 const logo = 'assets/shinchan-logo.png';
 const trustedPathAnchors = [root, tmpdir(), '/tmp', '/private/tmp'].map((path) => resolve(path)).sort((left, right) => right.length - left.length);
-export const portableFiles = ['SKILL.md', 'references/acceptance.md', 'references/autonomous-execution.md', 'references/codex-team.md', 'references/components.md', 'references/delivery.md', 'references/gates.md', 'references/lifecycle.md', 'references/review-protocol.md', 'references/upstream-methods.md', 'references/upstream/bmad-team-LICENSE.txt', ...upstreamPortableFiles];
+export const portableFiles = ['SKILL.md', 'references/acceptance.md', 'references/autonomous-execution.md', 'references/codex-team.md', 'references/components.md', 'references/delivery.md', 'references/gates.md', 'references/host-subagents.md', 'references/lifecycle.md', 'references/review-protocol.md', 'references/upstream-methods.md', 'references/upstream/bmad-team-LICENSE.txt', ...upstreamPortableFiles];
 export const codexOnlyFiles = ['agents/openai.yaml'];
 export const releaseFiles = ['LICENSE', 'NOTICE'];
 export const codexReleaseFiles = ['assets/README.md'];

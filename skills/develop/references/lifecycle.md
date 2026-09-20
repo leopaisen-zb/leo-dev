@@ -7,6 +7,7 @@ Existing change: run `leo-dev inspect --change <id>` or `leo-dev status --change
 以下示例在目标仓库根目录执行；从其他目录调用时，回执使用已核对的绝对路径，不能假定 `--repo` 会改变所有输入路径的解析基准。
 
 New change: run `leo-dev init --change <id> --spec <path>`, then `leo-dev inspect --change <id>`, then the reviewed `leo-dev route` path. `route` accepts the legacy `--task/--gate` Lite form and a repository task plan. Its committed route retains the maximum actual task risk (`lite`, `standard`, or `full`); a caller must not silently downgrade a Standard/Full plan to use a Lite path.
+用户说「开工」后写入规格与计划并继续（开工授权），再走已审查的 `leo-dev route` 路径。不必等用户再批规格文件。
 
 Lite may continue from `spec-approved` to `task-ready`. Standard/Full must enter `design-review`, obtain a current design receipt, then enter `design-approved` before `task-ready`. A current independent `reject` receipt may return only `design-review → spec-approved` in one transition batch; it retains the original specification approval and task revisions. Edit the rejected design only after that return, request a new design review with the repaired bytes, and obtain a fresh independent `pass` before `task-ready`. The same receipt must exactly bind the current change/spec/plan/design/producer context, be current and unused, and provenance/session labels remain unauthenticated audit metadata. 缺 Node、controller 或所需 transition 时如实报告 prerequisite/unsupported，不模拟状态。
 
