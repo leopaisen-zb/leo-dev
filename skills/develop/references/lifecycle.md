@@ -7,7 +7,7 @@ Existing change: run `leo-dev inspect --change <id>` or `leo-dev status --change
 以下示例在目标仓库根目录执行；从其他目录调用时，回执使用已核对的绝对路径，不能假定 `--repo` 会改变所有输入路径的解析基准。
 
 New change: run `leo-dev init --change <id> --spec <path>`, then `leo-dev inspect --change <id>`, then the reviewed `leo-dev route` path. `route` accepts the legacy `--task/--gate` Lite form and a repository task plan. Its committed route retains the maximum actual task risk (`lite`, `standard`, or `full`); a caller must not silently downgrade a Standard/Full plan to use a Lite path.
-用户说「开工」后先运行 `leo-dev start --change <id> --goal <text>`，写入规格与计划并继续（开工授权），再走已审查的 `leo-dev route` 路径。不必等用户再批规格文件。
+开工可执行顺序：`init --spec` 与一次 `leo-dev route` 之后，进入 discovery，再运行 `leo-dev start --change <id> --goal <text>`，然后 spec-review → spec-approved（开工授权）。规格在 `init --spec` 绑定；不要在 start 后再写规格/计划，也不要再 `route`。不必等用户再批规格文件。独立审查通过且证据绑当前树之后运行 `leo-dev commit --change <id> --message <text>`；不准 push。
 
 Lite may continue from `spec-approved` to `task-ready`. Standard/Full must enter `design-review`, obtain a current design receipt, then enter `design-approved` before `task-ready`. A current independent `reject` receipt may return only `design-review → spec-approved` in one transition batch; it retains the original specification approval and task revisions. Edit the rejected design only after that return, request a new design review with the repaired bytes, and obtain a fresh independent `pass` before `task-ready`. The same receipt must exactly bind the current change/spec/plan/design/producer context, be current and unused, and provenance/session labels remain unauthenticated audit metadata. 缺 Node、controller 或所需 transition 时如实报告 prerequisite/unsupported，不模拟状态。
 
@@ -33,7 +33,7 @@ The CI receipt and verifier evidence bind the change, authority, candidate, proo
 
 单任务保留上面的 `--task/--gate` Lite 兼容形式。多任务使用仓库内独立输入文件运行 `leo-dev route --change <id> --plan <path>`，不手改控制器生成的 tasks.yaml，也不重复 route 追加任务。输入是 `schemaVersion: 1` 和 `tasks`：每项有 `id`、`revision: 1`、`state`、`dependsOn`、`allowedPaths`、非空 `acceptance`、一个 `gateIds` 项，以及 `risk: lite|standard|full`。根任务 state 为 ready，其余为 pending；依赖引用唯一任务 ID，每项只使用一个已有的聚合 gate。可选 `role: integration` 最多一个；它必须传递依赖所有其他任务，且不能有后继。没有 integration task 的旧计划仍可执行，但不能生成 release evidence。allowedPaths 优先使用具体仓库相对文件，例如 `src/cart.ts`；需要目录内文件时用 `src/**`，不能把单独的 `src` 当作递归目录授权。当前仅支持路径片段中的 `*` 和独立 `**` 片段，不是完整 glob 引擎。`.` 是兼容的广泛授权，新计划避免使用。
 
-若仍在 triage，沿用真实的 `transition --scope change --to discovery`、`spec-review`、匹配既有授权的 `approve --receipt <path>` 和 `spec-approved`。当前未过期的 `leo-dev start --change <id> --goal <text>` 授权可代替 spec-approval 人签进入 `spec-approved`；人签 approve 路径仍可用。每步先核对当前状态；approve 回执按当前 `state.approvalContext` 绑定真实已有决定，不能凭本地标签制造人类批准。已进入 executing 的变更不重跑上述步骤。
+若仍在 triage，先 `transition --scope change --to discovery`，再运行 `leo-dev start --change <id> --goal <text>`，然后 spec-review → spec-approved。当前未过期的 start 授权可代替 spec-approval 人签进入 `spec-approved`；人签 `approve --receipt <path>` 路径仍可用。每步先核对当前状态；approve 回执按当前 `state.approvalContext` 绑定真实已有决定，不能凭本地标签制造人类批准。已进入 executing 的变更不重跑上述步骤。
 
 Lite 接着进入 `task-ready` 和 `executing`。Standard/Full 先使用仓库相对的设计源和实际 producer session：
 
@@ -72,7 +72,7 @@ leo-dev run-gates --change <id> --task <task-id> --run <saved-run-id> \
 
 Missing, expired, or mismatched approval refuses before candidate registration or Gate argv release. An approval receipt is a scoped decision record; its local provenance fields do not authenticate a person or platform.
 
-Gate 绑定写完后的候选，不能把 claim 输入哈希改成输出哈希；候选注册后再改代码会使证据过期。`REVIEW_REJECTED` 的成功退出仅表示拒绝回执已记录，任务应在 remediation，绝不是审查通过。按控制器剩余预算重新 claim，取得新的 Run/代次再修复、验证和审查；不要编辑任务验收或 ledger 重置次数。debug 尝试必须来自新的实际上下文，并提供不同 session；会话标签不是身份认证。
+Gate 绑定写完后的候选，不能把 claim 输入哈希改成输出哈希；候选注册后再改代码会使证据过期。`REVIEW_REJECTED` 的成功退出仅表示拒绝回执已记录，任务应在 remediation，绝不是审查通过。按实际状态重新 claim，取得新的 Run/代次再修复、验证和审查；不要编辑任务验收或 ledger。修复持续到独立审查通过，或因相同 findingsHash / 无新证据卡住（`no-progress`）。不要按尝试次数封顶。会话标签不是身份认证。
 
 任务 done 后只继续状态中已 ready 的后继；pending、blocked、approval-required 或 unknown 不能强行执行。换会话后先 inspect/status/resume。若上次代码已写、尚无候选注册，先核对现有文件、原 Run 和实际 lease.expiresAt；租约仍有效才可继续原 Run。过期时先按下文取得新代次，再写代码或运行 Gate。存在未知副作用时走既有 reconciliation，不能靠换一个 session/Run 绕过。
 
@@ -89,7 +89,7 @@ leo-dev claim --change <id> --task <task-id> --session <fresh-session-id> \
   --supersede <expired-run-id>
 ```
 
-成功后读取新 Run/leaseGeneration，再继续实现、Gate 和审查。控制器保留源码、失败预算和当前尝试类型，将原 Run 记为 abandoned 并隔离旧代次；fresh-debug 的新 session 必须不同于该任务所有先前 claim 的 session。旧输出只作诊断，不能充当新尝试的成功证据。普通 claim 不会自动接管过期任务。已有候选、Gate 记录、提交或 unknown 结果时不适用此入口；按实际状态选择已支持的审查恢复或 reconciliation，拒绝后不改日志、租约或时钟。
+成功后读取新 Run/leaseGeneration，再继续实现、Gate 和审查。控制器保留源码和当前尝试类型，将原 Run 记为 abandoned 并隔离旧代次；supersede 的新 session 必须不同于当前 claim 的 session。旧输出只作诊断，不能充当新尝试的成功证据。普通 claim 不会自动接管过期任务。已有候选、Gate 记录、提交或 unknown 结果时不适用此入口；按实际状态选择已支持的审查恢复或 reconciliation，拒绝后不改日志、租约或时钟。
 
 长任务的非 Lite 设计审查到期时，需要对 `state.designReviewContext` 中同一份设计、规格和计划做一次新的独立审查。`claim --design-review-receipt <new-receipt-path>` 可随合法的普通领取或上述 supersession 原子记录新凭据；使用仓库内的 runtime/evidence 路径保存它。设计源与绑定必须保持一致，并已有获批设计历史。新审查应有真实报告、新 ID 和实际时间；不能修改旧凭据的时间。设计或规格变更仍走原设计/修订流程；无效领取不会消耗新凭据。
 
@@ -105,7 +105,7 @@ leo-dev resume --change <id> --task <task-id> --recover-review
 leo-dev status --change <id>
 ```
 
-恢复只建立审查接续上下文，不重写代码、不重跑 Gate、不延长原租约或消耗一次修复机会。`REVIEW_RECOVERED` / `REVIEW_RECOVERY_REPLAYED` 后仍须审查；读取新的 `reviewContext`（包含 recoveryId），交给实际 reviewer 核对当前候选和证据，生成新审查回执。原 Run、leaseGeneration 和候选哈希保持原值；诊断时间在旁路 `reviewRecovery`，不整块复制进回执。旧 findings 可作为历史材料，但不能仅改旧回执时间/ID来声称发生了新审查。
+恢复只建立审查接续上下文，不重写代码、不重跑 Gate、不延长原租约。`REVIEW_RECOVERED` / `REVIEW_RECOVERY_REPLAYED` 后仍须审查；读取新的 `reviewContext`（包含 recoveryId），交给实际 reviewer 核对当前候选和证据，生成新审查回执。原 Run、leaseGeneration 和候选哈希保持原值；诊断时间在旁路 `reviewRecovery`，不整块复制进回执。旧 findings 可作为历史材料，但不能仅改旧回执时间/ID来声称发生了新审查。
 
 重复恢复应返回同一标识。普通 `resume` 不自动重新接纳待审候选；执行新命令被拒绝时按实际漂移、未知结果或前置条件处理，不编辑日志/租约绕过。当前接口仅支持可验证的成功 Gate 提交链；历史 reconciliation-derived 等不支持的情况如实报告。已 `done` / `remediation` 的任务按其正常流程推进，不反复恢复。
 
@@ -156,7 +156,7 @@ leo-dev route --change <id> --plan <repo-relative-plan-path> --assessment .leo-d
 
 先确认当前入口的 `leo-dev revise --help` 真正列出 `--spec`、`--plan`、`--constitution`、`--assessment`、`--receipt`；旧包不支持时报告 prerequisite，不能编辑初始化哈希或创建替代 ledger。上游方法负责影响分析和草案，只有当前 controller 的专用修订操作激活新版本。
 
-保留所有旧 task ID，每项 revision 在当前值上加 1；新增 ID 从 1 开始。完整计划中根任务 ready、依赖任务 pending，不携带 done；仍须满足路径、依赖、验收、Gate 和 integration-role 约束。本切片不支持删除旧任务、选择性继承成功或借修订清空修复预算。无需强制重写已正确的代码，也不要求所有任务先做完；但活动租约、未知结果、未完成门禁/批次、未决批准和重大治理阻断必须先按既有边界解决。
+保留所有旧 task ID，每项 revision 在当前值上加 1；新增 ID 从 1 开始。完整计划中根任务 ready、依赖任务 pending，不携带 done；仍须满足路径、依赖、验收、Gate 和 integration-role 约束。本切片不支持删除旧任务、选择性继承成功或借修订抹掉已记录的失败与卡住证据。无需强制重写已正确的代码，也不要求所有任务先做完；但活动租约、未知结果、未完成门禁/批次、未决批准和重大治理阻断必须先按既有边界解决。
 
 准备仓库内 Spec 草案和完整任务输入；宪法是明确指定的仓库内文档，不是自动修改全局 AGENTS。省略 `--constitution` 保留当前绑定，没有移除宪法开关。需要不同 registry 才显式提供 `--registry`。先只读提案：
 
