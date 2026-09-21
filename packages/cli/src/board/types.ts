@@ -1,4 +1,5 @@
-export type BoardColumn = 'queued' | 'active' | 'review' | 'done';
+export type BoardColumn = 'todo' | 'doing' | 'done';
+export type ReviewBadge = 'none' | 'reviewing' | 'rejected';
 export type CandidateStatus = 'unknown' | 'matches' | 'drifted';
 
 export interface BoardEvidence {
@@ -17,6 +18,7 @@ export interface BoardTaskObservation {
   revision: number;
   state: string;
   column: BoardColumn;
+  reviewBadge: ReviewBadge;
   blocked: boolean;
   requirements: string[];
   runId: string | null;

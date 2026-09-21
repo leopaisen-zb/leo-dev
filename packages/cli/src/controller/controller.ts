@@ -25,7 +25,8 @@ import { validateDocument, validateReceipt, validateTaskDefinition, type Receipt
 import { decideFailedAttempt, failedAttemptCount, previousFindingsHash } from '../state/attempt-policy.js';
 import { currentIndependentPass, independentReviewSession } from '../state/commit-pass.js';
 import { Journal, JournalCorruptError, JournalTailMismatchError, recoverJournal, type JournalObservation } from '../state/journal.js';
-import type { BoardBlocker, BoardColumn, BoardEvidence, BoardObservation, BoardTaskObservation, RecordedTeamObservation } from '../board/types.js';
+import { boardColumn, reviewBadge } from '../board/columns.js';
+import type { BoardBlocker, BoardEvidence, BoardObservation, BoardTaskObservation, RecordedTeamObservation } from '../board/types.js';
 import type { Lease } from '../state/lease.js';
 import { ControllerBatchInvalidError, projectJournalEvents, recoverSnapshot, reduceJournal, type ControllerBatchOperation, type ControllerBatchPrepared, type LifecycleSnapshotState } from '../state/snapshot.js';
 import { reconcileUnknown, transitionChange, transitionRun, transitionTask, type TransitionResult } from '../state/transition.js';
@@ -2354,13 +2355,6 @@ export class Controller {
     return result('STATUS', await this.state(repositoryRoot, changeId));
   }
 
-  private boardColumn(state: string): BoardColumn {
-    if (state === 'done') return 'done';
-    if (state === 'review-required' || state === 'reviewing') return 'review';
-    if (state === 'pending' || state === 'ready') return 'queued';
-    return 'active';
-  }
-
   private async boardCandidateStatus(repositoryRoot: string, authority: ReturnType<typeof currentAuthority>, route: Routed, claimed: Claimed | undefined, candidate: CandidateBinding | undefined): Promise<'unknown' | 'matches' | 'drifted'> {
     if (!authority || !claimed || !candidate || claimed.lease.taskId !== route.task.id || candidate.runId !== claimed.runId
       || claimed.lease.taskRevision !== route.task.revision || candidate.taskId !== route.task.id || candidate.taskRevision !== route.task.revision || candidate.leaseGeneration !== claimed.lease.generation || candidate.claimInputTreeHash !== claimed.lease.inputTreeHash
@@ -2492,9 +2486,12 @@ export class Controller {
       } : null;
       const activity = currentEvents.filter((event) => event.taskId === taskId).at(-1)?.timestamp ?? null;
       const state = task?.state ?? route.task.state;
+      const lastReview = currentEvents.filter((event) => event.type === 'receipt.review.ingested' && event.taskId === taskId).at(-1);
+      const lastReviewVerdictRaw = lastReview ? record(record(lastReview.payload).receipt).verdict : undefined;
+      const lastReviewVerdict = lastReviewVerdictRaw === 'pass' || lastReviewVerdictRaw === 'reject' ? lastReviewVerdictRaw : undefined;
       const taskBlockers = currentEvents.filter((event) => event.type === 'blocker.recorded' && event.taskId === taskId).map((event) => ({ blockerId: typeof record(event.payload).blockerId === 'string' ? record(event.payload).blockerId as string : 'unknown', reason: typeof record(event.payload).reason === 'string' ? record(event.payload).reason as string : null, taskId, recordedAt: event.timestamp }));
       const lease = claimed ? lifecycle.leases[taskId] : undefined;
-      tasks.push({ id: taskId, title: taskId, revision: route.task.revision, state, column: this.boardColumn(state), blocked: state === 'blocked', requirements: route.task.acceptance, runId: claimed?.runId ?? null, assignmentSession: claimed?.sessionId ?? null, runState: claimed ? lifecycle.runs[claimed.runId]?.state ?? 'unknown' : null, leaseActive: claimed ? lease?.generation === claimed.lease.generation ? lease.active : false : null, lastActivity: activity, blockers: taskBlockers, gate, review });
+      tasks.push({ id: taskId, title: taskId, revision: route.task.revision, state, column: boardColumn(state), reviewBadge: reviewBadge(state, lastReviewVerdict), blocked: state === 'blocked', requirements: route.task.acceptance, runId: claimed?.runId ?? null, assignmentSession: claimed?.sessionId ?? null, runState: claimed ? lifecycle.runs[claimed.runId]?.state ?? 'unknown' : null, leaseActive: claimed ? lease?.generation === claimed.lease.generation ? lease.active : false : null, lastActivity: activity, blockers: taskBlockers, gate, review });
     }
     const projectedTeam = projectTeam(currentEvents);
     const memberActivity = new Map<string, string>(); const messageActivity = new Map<string, { recordedAt: string; fromMemberId: string; toMemberId: string }>();

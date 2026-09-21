@@ -6,7 +6,7 @@ import type { BoardObservation } from '../../packages/cli/src/board/types.js';
 const observation: BoardObservation = {
   schemaVersion: 1, observedAt: '2026-09-16T00:00:00.000Z', repositoryRoot: '/fixed/repo', changeId: 'fixed-change',
   availability: 'available', hostLiveStatus: 'unknown', change: { state: 'executing', revision: 1, revisionId: 'r1', blockers: [] },
-  tasks: [{ id: '<img src=x onerror=alert(1)>', title: 'safe text', revision: 1, state: 'implementing', column: 'active', blocked: false, requirements: ['must remain text'], runId: 'run-1', assignmentSession: 'fixture', runState: 'running', leaseActive: true, lastActivity: null, blockers: [], gate: null, review: null }],
+  tasks: [{ id: '<img src=x onerror=alert(1)>', title: 'safe text', revision: 1, state: 'implementing', column: 'doing', blocked: false, requirements: ['must remain text'], runId: 'run-1', assignmentSession: 'fixture', runState: 'running', leaseActive: true, lastActivity: null, blockers: [], gate: null, review: null, reviewBadge: 'none' }],
   recordedTeam: null,
 };
 

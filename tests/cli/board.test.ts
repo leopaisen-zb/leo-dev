@@ -168,7 +168,7 @@ test('observes a real CLI-produced task history without changing any file', asyn
   const observed = cli(root, 'observe', '--change', 'board');
   expect(observed.status, JSON.stringify(observed.envelope)).toBe(0);
   expect(observed.envelope.code).toBe('OBSERVATION');
-  expect(observed.envelope.state).toMatchObject({ availability: 'available', hostLiveStatus: 'unknown', change: { state: 'triage' }, tasks: [{ id: 'board-task', state: 'ready', column: 'queued' }] });
+  expect(observed.envelope.state).toMatchObject({ availability: 'available', hostLiveStatus: 'unknown', change: { state: 'triage' }, tasks: [{ id: 'board-task', state: 'ready', column: 'todo' }] });
   expect(await files(root)).toEqual(before);
 });
 
@@ -248,6 +248,16 @@ async function submittedFixture(risk: 'lite' | 'standard' | 'full' = 'lite', ttl
   expect(submitted).toBeDefined();
   return { root, runId, candidate: candidate!, submitted: submitted! };
 }
+
+test('projects a submitted task onto doing with a reviewing badge', async () => {
+  const { root } = await submittedFixture();
+  const observed = cli(root, 'observe', '--change', 'board');
+  expect(observed.status, JSON.stringify(observed.envelope)).toBe(0);
+  expect(observed.envelope.state).toMatchObject({
+    availability: 'available',
+    tasks: [{ id: 'board-task', state: 'review-required', column: 'doing', reviewBadge: 'reviewing' }],
+  });
+});
 
 describe('completed Gate observation fixture', () => {
   let prepared: Awaited<ReturnType<typeof submittedFixture>>;
