@@ -1625,7 +1625,7 @@ export class Controller {
     await writeSnapshotStrict(paths.runtime.snapshot, journal); return result('ARCHIVED', await this.state(repositoryRoot, changeId));
   }
 
-  private async planChangeTransition(repositoryRoot: string, changeId: string, to: string, events: JournalEvent[], options: CommandOptions = {}): Promise<{ lifecycle: LifecycleSnapshotState; from: ChangeState; manifest: RecordValue; spec: RecordValue; approval?: RecordValue; approvalHash?: string; designContext?: DesignReviewContext; designReceipt?: RecordValue }> {
+  private async planChangeTransition(repositoryRoot: string, changeId: string, to: string, events: JournalEvent[], options: CommandOptions = {}): Promise<{ lifecycle: LifecycleSnapshotState; from: ChangeState; manifest: RecordValue; spec: RecordValue; approvalMatches: boolean; approval?: RecordValue; approvalHash?: string; designContext?: DesignReviewContext; designReceipt?: RecordValue }> {
     const lifecycle = reduceJournal(events);
     const from = lifecycle.changeState as ChangeState;
     const initialized = latestPayload<Initialized>(events, 'controller.initialized');
@@ -1676,7 +1676,7 @@ export class Controller {
       const approvalNeeded = from === 'spec-review' && to === 'spec-approved';
       throw new ControllerError(approvalNeeded ? 6 : (to === 'task-ready' && routes.length > 0 && !gateRegistry ? 5 : 3), approvalNeeded ? 'APPROVAL_REQUIRED' : to === 'task-ready' && routes.length > 0 && !gateRegistry ? 'CONFLICT' : decision.code, decision.detail, lifecycle);
     }
-    return { lifecycle, from, manifest, spec, ...(approval ? { approval, approvalHash: fingerprint(approval) } : {}), ...(design?.context ? { designContext: design.context } : {}), ...(design?.receipt ? { designReceipt: design.receipt } : {}) };
+    return { lifecycle, from, manifest, spec, approvalMatches, ...(approvalMatches && approval ? { approval, approvalHash: fingerprint(approval) } : {}), ...(design?.context ? { designContext: design.context } : {}), ...(design?.receipt ? { designReceipt: design.receipt } : {}) };
   }
 
   private reviewRecoveryBinding(changeId: string, taskId: string, events: JournalEvent[], recoveredAt: Date): Omit<ReviewRecoveryPayload, 'schemaVersion' | 'recoveryId'> {
@@ -2582,7 +2582,7 @@ export class Controller {
     const journal = new Journal(paths.runtime.journal);
     if (scope === 'change') {
       const plan = await this.planChangeTransition(repositoryRoot, changeId, to, events, options);
-      const approvalProjection = to === 'spec-approved' && plan.from !== 'design-review' && plan.approval && plan.approvalHash
+      const approvalProjection = to === 'spec-approved' && plan.from !== 'design-review' && plan.approvalMatches && plan.approval && plan.approvalHash
         ? { approvalRef: `receipt:${String(plan.approval.receiptId)}`, approvalHash: plan.approvalHash }
         : {};
       const desiredManifest = { ...plan.manifest, state: to, ...approvalProjection };
