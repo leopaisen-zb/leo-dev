@@ -11,7 +11,13 @@ __pycache__/
 .DS_Store
 
 # Personal execution history and generated example data stay local.
-.scratch/
+.scratch/*
+!.scratch/modern-harness/
+.scratch/modern-harness/*
+!.scratch/modern-harness/spec.md
+!.scratch/modern-harness/acceptance.md
+!.scratch/modern-harness/01-spec-review.md
+
 .superpowers/
 verification/
 experiments/
