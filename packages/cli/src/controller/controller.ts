@@ -23,6 +23,7 @@ import { normalizeRepositoryPath } from '../security/paths.js';
 import { loadSchema } from '../schema/load.js';
 import { validateDocument, validateReceipt, validateTaskDefinition, type ReceiptKind } from '../schema/validate.js';
 import { decideFailedAttempt, failedAttemptCount, previousFindingsHash } from '../state/attempt-policy.js';
+import { currentIndependentPass, independentReviewSession } from '../state/commit-pass.js';
 import { Journal, JournalCorruptError, JournalTailMismatchError, recoverJournal, type JournalObservation } from '../state/journal.js';
 import type { BoardBlocker, BoardColumn, BoardEvidence, BoardObservation, BoardTaskObservation, RecordedTeamObservation } from '../board/types.js';
 import type { Lease } from '../state/lease.js';
@@ -157,57 +158,6 @@ function currentStartAuthorization(events: JournalEvent[]): { goal: string; goal
   const payload = record(events[latestIndex]!.payload);
   if (typeof payload.goal !== 'string' || typeof payload.goalHash !== 'string') return undefined;
   return { goal: payload.goal, goalHash: payload.goalHash };
-}
-
-function treeMatchesReviewedCandidate(current: { hash: string; entries: string[] }, rawEvents: JournalEvent[], treeHash: string): boolean {
-  if (current.hash === treeHash) return true;
-  let afterSequence = -1;
-  for (let index = 0; index < rawEvents.length; index += 1) {
-    const event = rawEvents[index]!;
-    if (event.type !== 'controller.batch.prepared') continue;
-    const operations = Array.isArray(record(event.payload).operations) ? record(event.payload).operations as RecordValue[] : [];
-    if (operations.some((operation) => record(operation).type === 'controller.candidate.registered' && record(record(operation).payload).treeHash === treeHash)) {
-      afterSequence = rawEvents[index + 1]?.sequence ?? event.sequence;
-    }
-  }
-  if (afterSequence < 0) return false;
-  const entries = current.entries.slice();
-  const undos: Array<{ relativePath: string; priorHash: string; desiredHash: string }> = [];
-  for (let index = 0; index < rawEvents.length; index += 1) {
-    const event = rawEvents[index]!;
-    if (event.type !== 'controller.batch.prepared') continue;
-    const committed = rawEvents[index + 1];
-    if (committed?.type !== 'controller.batch.committed' || committed.sequence <= afterSequence) continue;
-    const projections = Array.isArray(record(event.payload).projections) ? record(event.payload).projections as RecordValue[] : [];
-    for (const projection of projections) {
-      if (typeof projection.relativePath === 'string' && typeof projection.priorHash === 'string' && typeof projection.desiredHash === 'string') {
-        undos.push({ relativePath: projection.relativePath, priorHash: projection.priorHash, desiredHash: projection.desiredHash });
-      }
-    }
-  }
-  for (const projection of undos.reverse()) {
-    const index = entries.findIndex((entry) => entry.split('\0', 1)[0] === projection.relativePath);
-    if (index < 0) return false;
-    const parts = entries[index]!.split('\0');
-    if (parts[2] !== projection.desiredHash) return false;
-    entries[index] = `${parts[0]}\0${parts[1]}\0${projection.priorHash}`;
-  }
-  return hash(`${TREE_IGNORE_POLICY_VERSION}\n${entries.join('\n')}`) === treeHash;
-}
-
-function currentIndependentPass(events: JournalEvent[], current: { hash: string; entries: string[] }, rawEvents: JournalEvent[], at = new Date()): RecordValue | undefined {
-  let latest: RecordValue | undefined;
-  for (const event of events) {
-    if (event.type !== 'receipt.review.ingested') continue;
-    const receipt = record(record(event.payload).receipt);
-    if (receipt.verdict !== 'pass' || typeof receipt.treeHash !== 'string' || !treeMatchesReviewedCandidate(current, rawEvents, receipt.treeHash)) continue;
-    const independent = receipt.provenance === 'human-confirmed'
-      || (receipt.provenance === 'platform-attested' && typeof receipt.sessionId === 'string' && receipt.sessionId.length > 0);
-    if (!independent) continue;
-    if (typeof receipt.expiresAt === 'string' && Number.isFinite(Date.parse(receipt.expiresAt)) && Date.parse(receipt.expiresAt) <= at.getTime()) continue;
-    latest = receipt;
-  }
-  return latest;
 }
 
 export function teamMutationBarrierReason(events: JournalEvent[]): string | undefined {
@@ -1955,11 +1905,7 @@ export class Controller {
     const projectedLease = lifecycle.leases[taskId];
     if (!projectedLease?.active || projectedLease.generation !== claimed.lease.generation || (!recovery && Date.parse(claimed.lease.expiresAt) <= Date.now())) throw new ControllerError(5, 'CONFLICT', 'Submitted candidate lease is no longer current', lifecycle);
     if ((await canonicalTreeHash(repositoryRoot)).hash !== submitted.treeHash) throw new ControllerError(5, 'CONFLICT', 'Controlled tree has drifted from the submitted Gate-bound candidate', lifecycle);
-    const independent = receipt.provenance === 'human-confirmed'
-      || (receipt.provenance === 'platform-attested'
-        && typeof claimed.sessionId === 'string' && claimed.sessionId.length > 0
-        && typeof receipt.sessionId === 'string' && receipt.sessionId.length > 0
-        && receipt.sessionId !== claimed.sessionId);
+    const independent = independentReviewSession(receipt, claimed);
     if (!independent) {
       throw new ControllerError(5, 'CONFLICT', 'Platform review cannot prove an independent session from the claimed implementation; issuer was not authenticated', lifecycle);
     }

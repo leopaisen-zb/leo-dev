@@ -117,3 +117,16 @@ test('refuses commit when nothing is staged', async () => {
   expectExit(blocked, 7, 'BLOCKED');
   expect(blocked.envelope.errors[0]?.message).toContain('nothing staged');
 }, 60_000);
+
+test('refuses commit when product files change after the independent pass', async () => {
+  const root = await fixture();
+  const change = 'drift';
+  await executingLite(root, change);
+  await passReview(root, change, 'task');
+  await writeFile(join(root, 'src/task.ts'), '// edited after independent pass\n');
+  prepareGit(root);
+  git(root, 'add', '-A');
+  const blocked = cli(root, 'commit', '--change', change, '--message', 'feat: example');
+  expectExit(blocked, 7, 'BLOCKED');
+  expect(blocked.envelope.errors[0]?.message).toContain('independent review pass bound to the current tree');
+}, 60_000);
