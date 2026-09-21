@@ -36,11 +36,13 @@ consistent rather than editing stored evidence.
 
 ## Read the display
 
-The four columns group tasks as Queued, Active, Review and Done. Each task also
-shows its actual controller state. Select a card with a pointer, or focus it
-with **Tab** and press **Enter**, to inspect its recorded details.
+The three columns group tasks as 待办, 进行中 and 完成. Review is a badge on
+the card (审查中 / 审查未过), not a fourth column. Each task also shows its
+actual controller state. Select a card with a pointer, or focus it with **Tab**
+and press **Enter**, to inspect its recorded details. The board is read-only:
+it does not edit tasks, start agents, or write the journal.
 
-**Refresh** reads a new observation. It preserves the selected task when that
+**刷新** reads a new observation. It preserves the selected task when that
 task still exists. There is no background polling or automatic agent execution.
 If a refresh fails, the previous display is marked stale; its old green evidence
 must not be treated as a fresh check. A first failed read shows unavailable
