@@ -158,6 +158,10 @@ function currentStartAuthorization(events: JournalEvent[]): { goal: string; goal
   if (competingReject) return undefined;
   const payload = record(events[latestIndex]!.payload);
   if (typeof payload.goal !== 'string' || typeof payload.goalHash !== 'string') return undefined;
+  if (typeof payload.specHash === 'string') {
+    const authority = currentAuthority(events);
+    if (authority && authority.specHash !== payload.specHash) return undefined;
+  }
   return { goal: payload.goal, goalHash: payload.goalHash };
 }
 
@@ -2218,9 +2222,14 @@ export class Controller {
     const changeId = this.changeId(options);
     const goal = stringOption(options, 'goal')!;
     const events = await this.readEvents(repositoryRoot, changeId);
+    const lifecycle = reduceJournal(events);
+    if (lifecycle.changeState !== 'triage' && lifecycle.changeState !== 'discovery' && lifecycle.changeState !== 'spec-review') {
+      throw new ControllerError(7, 'BLOCKED', 'start authorization is only valid before spec-approved', lifecycle);
+    }
     const goalHash = hash(goal);
+    const specHash = currentAuthority(events)?.specHash;
     const journal = new Journal(runtimePaths(repositoryRoot, changeId).journal);
-    await commitControllerBatch({ repositoryRoot, changeId, journal, priorEvents: events, kind: 'start', faultAt: options.faultAt, operations: [{ type: 'controller.start.authorized', payload: { goal, goalHash } }] });
+    await commitControllerBatch({ repositoryRoot, changeId, journal, priorEvents: events, kind: 'start', faultAt: options.faultAt, operations: [{ type: 'controller.start.authorized', payload: { goal, goalHash, ...(specHash ? { specHash } : {}) } }] });
     await writeSnapshotStrict(runtimePaths(repositoryRoot, changeId).snapshot, journal);
     return result('START_AUTHORIZED', { ...(await this.state(repositoryRoot, changeId)), goal, goalHash });
   }
@@ -2236,6 +2245,12 @@ export class Controller {
     if (!baseline.git.available) throw new ControllerError(7, 'BLOCKED', 'not a git repository');
     if (!currentIndependentPass(events, current, rawEvents)) throw new ControllerError(7, 'BLOCKED', 'independent review pass bound to the current tree is required');
     if (baseline.staged.length === 0) throw new ControllerError(7, 'BLOCKED', 'nothing staged');
+    const initializedEvent = events.find((event) => event.type === 'controller.initialized');
+    const initBaseline = record(record(initializedEvent?.payload).baseline) as unknown as Baseline;
+    const protectedPaths = new Set([...(initBaseline.dirty ?? []), ...(initBaseline.untracked ?? [])]);
+    if (baseline.staged.some((path) => protectedPaths.has(path))) {
+      throw new ControllerError(7, 'BLOCKED', 'pre-existing dirty files must not be committed');
+    }
     if (options.dryRun === true) return result('DRY_RUN', { planned: true, pushed: false });
     const recorded = spawnSync('git', ['commit', '-m', message], { cwd: repositoryRoot, encoding: 'utf8' });
     if (recorded.status !== 0) throw new ControllerError(7, 'BLOCKED', (recorded.stderr || recorded.stdout || 'git commit failed').trim());

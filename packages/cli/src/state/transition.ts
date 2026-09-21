@@ -46,9 +46,9 @@ export function transitionTask(from: TaskState, to: string, context: TransitionC
   if (from === 'leased' && to === 'implementing') return context.runMatchesLease ? adjacent : denied('run must match lease');
   if (from === 'implementing' && to === 'verifying') return context.candidateMatchesCas ? adjacent : denied('candidate must match CAS');
   if (from === 'verifying' && to === 'review-required') return context.gatesCurrent ? adjacent : denied('current gates required');
-  const reviewPolicy = context.risk === 'lite' ? ['platform-attested', 'human-confirmed', 'agent-asserted'] : ['platform-attested', 'human-confirmed'];
-  if (from === 'review-required' && to === 'reviewing') return context.reviewSessionAccepted && reviewPolicy.includes(context.reviewProvenance ?? '') && (context.risk === 'lite' || context.reviewProvenance === 'human-confirmed' || context.independentSession) ? adjacent : denied('accepted reviewer session required by risk policy');
-  if (from === 'reviewing' && to === 'done') return context.reviewReceiptAccepted && reviewPolicy.includes(context.reviewProvenance ?? '') && (context.risk === 'lite' || context.reviewProvenance === 'human-confirmed' || context.independentSession) && (context.risk !== 'full' || (context.architectureReceipt && context.securityReceipt && context.nfrReceipt)) ? adjacent : denied('accepted review receipt required by risk policy');
+  const reviewPolicy = ['platform-attested', 'human-confirmed'];
+  if (from === 'review-required' && to === 'reviewing') return context.reviewSessionAccepted && reviewPolicy.includes(context.reviewProvenance ?? '') && (context.reviewProvenance === 'human-confirmed' || context.independentSession) ? adjacent : denied('accepted reviewer session required by risk policy');
+  if (from === 'reviewing' && to === 'done') return context.reviewReceiptAccepted && reviewPolicy.includes(context.reviewProvenance ?? '') && (context.reviewProvenance === 'human-confirmed' || context.independentSession) && (context.risk !== 'full' || (context.architectureReceipt && context.securityReceipt && context.nfrReceipt)) ? adjacent : denied('accepted review receipt required by risk policy');
   if ((from === 'verifying' || from === 'reviewing') && to === 'remediation') return context.retryRemaining && context.failureRecorded ? adjacent : denied('remediation requires recorded failure and retry budget');
   if (from === 'remediation' && to === 'ready') return context.newLeaseGeneration ? adjacent : denied('remediation retry needs a fresh generation');
   return adjacent;

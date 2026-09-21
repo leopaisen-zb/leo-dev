@@ -84,10 +84,12 @@ afterEach(async () => { await Promise.all(temporary.splice(0).map((path) => rm(p
 test('commits locally after an independent pass and never pushes', async () => {
   const root = await fixture();
   const change = 'work';
+  prepareGit(root);
+  git(root, 'add', '-A');
+  git(root, 'commit', '-m', 'init');
   await executingLite(root, change);
   await passReview(root, change, 'task');
-  prepareGit(root);
-  spawnSync('git', ['-c', 'user.name=Leo', '-c', 'user.email=leo@example.test', 'add', '-A'], { cwd: root });
+  git(root, 'add', 'src/task.ts');
   const committed = cli(root, 'commit', '--change', change, '--message', 'feat: example');
   expectExit(committed, 0, 'COMMITTED');
   expect(committed.envelope.state).toMatchObject({ pushed: false });
@@ -106,6 +108,21 @@ test('source does not spawn git push', async () => {
   const command = await readFile(join(repository, 'packages/cli/src/commands/commit.ts'), 'utf8');
   expect(command).not.toMatch(/push/);
 });
+
+test('refuses commit of files that were dirty before init', async () => {
+  const root = await fixture();
+  const change = 'dirty';
+  await writeFile(join(root, 'leftover.txt'), 'user\n');
+  prepareGit(root);
+  git(root, 'add', 'approved.md', 'core');
+  git(root, 'commit', '-m', 'init');
+  await executingLite(root, change);
+  await passReview(root, change, 'task');
+  git(root, 'add', 'leftover.txt');
+  const blocked = cli(root, 'commit', '--change', change, '--message', 'feat: example');
+  expectExit(blocked, 7, 'BLOCKED');
+  expect(blocked.envelope.errors[0]?.message).toContain('pre-existing dirty files');
+}, 60_000);
 
 test('refuses commit when nothing is staged', async () => {
   const root = await fixture();

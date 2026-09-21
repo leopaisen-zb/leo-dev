@@ -17,9 +17,10 @@ describe('attempt-policy', () => {
       .toEqual({ target: 'blocked', nextKind: 'blocked', reason: 'no-progress' });
   });
 
-  test('gate failure without findings hash remediates on the first miss and blocks only when repeated with no hash change', () => {
+  test('gate failure without findings hash remediates; missing hashes are not the same findings', () => {
     expect(decideFailedAttempt({ priorFailures: 0 })).toEqual({ target: 'remediation', nextKind: 'remediation' });
-    expect(decideFailedAttempt({ priorFailures: 1 })).toEqual({ target: 'blocked', nextKind: 'blocked', reason: 'no-progress' });
+    expect(decideFailedAttempt({ priorFailures: 1 })).toEqual({ target: 'remediation', nextKind: 'remediation' });
+    expect(decideFailedAttempt({ priorFailures: 4 })).toEqual({ target: 'remediation', nextKind: 'remediation' });
   });
 
   test('reads the last findingsHash for a task', () => {

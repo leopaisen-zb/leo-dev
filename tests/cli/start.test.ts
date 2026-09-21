@@ -51,6 +51,20 @@ test('start without a goal is invalid', async () => {
   expect(cli(root, 'start', '--change', 'work').status).toBe(2);
 });
 
+test('start then spec-approved can claim', async () => {
+  const root = await fixture();
+  expectExit(cli(root, 'init', '--change', 'work', '--spec', 'approved.md'), 0, 'INITIALIZED');
+  expectExit(cli(root, 'route', '--change', 'work', '--task', 'task', '--gate', 'pass'), 0, 'ROUTED_LITE');
+  expectExit(cli(root, 'transition', '--change', 'work', '--scope', 'change', '--to', 'discovery'), 0, 'TRANSITIONED');
+  expectExit(cli(root, 'start', '--change', 'work', '--goal', 'ship the three-column board'), 0, 'START_AUTHORIZED');
+  expectExit(cli(root, 'transition', '--change', 'work', '--scope', 'change', '--to', 'spec-review'), 0, 'TRANSITIONED');
+  expectExit(cli(root, 'transition', '--change', 'work', '--scope', 'change', '--to', 'spec-approved'), 0, 'TRANSITIONED');
+  expectExit(cli(root, 'transition', '--change', 'work', '--scope', 'change', '--to', 'task-ready'), 0, 'TRANSITIONED');
+  expectExit(cli(root, 'transition', '--change', 'work', '--scope', 'change', '--to', 'executing'), 0, 'TRANSITIONED');
+  expectExit(cli(root, 'claim', '--change', 'work', '--task', 'task', '--session', 'producer'), 0, 'CLAIMED');
+  expectExit(cli(root, 'start', '--change', 'work', '--goal', 'too late'), 7, 'BLOCKED');
+});
+
 test('reject then start reaches spec-approved without stamping the reject receipt', async () => {
   const root = await fixture();
   expectExit(cli(root, 'init', '--change', 'work', '--spec', 'approved.md'), 0, 'INITIALIZED');
