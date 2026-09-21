@@ -444,7 +444,7 @@ describe('Codex C2 candidate handoff regressions', () => {
     const reviewContext = (submitted.envelope.state as { reviewContext: Record<string, unknown> }).reviewContext;
     const review = await receipt(`review-${changeId}`, {
       receiptId: `test-only-review-${changeId}`,
-      provenance: 'agent-asserted',
+      provenance: 'human-confirmed',
       actorLabel: 'TEST-ONLY synthetic reviewer; issuer not authenticated',
       sessionId: 'test-only-historical-review-session',
       ...reviewContext,

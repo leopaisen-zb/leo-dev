@@ -156,7 +156,7 @@ async function reviewReceipt(root: string, context: Record<string, unknown>, ove
   return receipt(root, 'review', {
     ...context,
     receiptId: `review-${randomUUID()}`,
-    provenance: 'agent-asserted',
+    provenance: 'human-confirmed',
     actorLabel: 'TEST-ONLY reviewer label; issuer not authenticated',
     sessionId: `session-${randomUUID()}`,
     findingsHash: hash('no findings'),

@@ -11,8 +11,8 @@ const skillDirectory = join(root, 'skills/develop');
 const references = Object.freeze([
   'references/acceptance.md', 'references/autonomous-execution.md', 'references/components.md',
   'references/codex-team.md',
-  'references/delivery.md', 'references/gates.md', 'references/lifecycle.md', 'references/review-protocol.md',
-  'references/upstream-methods.md',
+  'references/delivery.md', 'references/gates.md', 'references/host-subagents.md', 'references/lifecycle.md',
+  'references/review-protocol.md', 'references/upstream-methods.md',
 ]);
 const authorityCategories = Object.freeze([
   'deploy', 'push', 'PR', 'merge', 'publication', 'paid service', 'credential expansion',
@@ -69,6 +69,9 @@ function requireAuthorityClause(text: string, category: string) {
 }
 function validateSemantics(documents: Documents, commands: Set<string>) {
   requireClause(documents.skill, '`develop` is the only public development entry.', 'single-entry');
+  requireClause(documents.skill, 'Any product-code or behavior change enters the full cycle.', 'skill/full-cycle');
+  requireClause(documents.skill, 'Direct answers and read-only review/diagnosis bypass durable change state.', 'skill/bypass');
+  requireClause(documents.skill, 'Do not read every reference before starting.', 'skill/on-demand');
   requireClause(documents.lifecycle, 'Conceptual phases are not literal CLI commands.', 'lifecycle/conceptual');
   requireClause(documents.lifecycle, 'Artifacts are controller-created and controller-validated outputs, not a command.', 'lifecycle/artifacts');
   requireClause(documents.lifecycle, 'Existing change: run `leo-dev inspect --change <id>` or `leo-dev status --change <id>`, then use `leo-dev resume --change <id>` or the next supported command returned by state.', 'lifecycle/existing');
@@ -77,16 +80,17 @@ function validateSemantics(documents: Documents, commands: Set<string>) {
   requireClause(documents.lifecycle, 'a caller must not silently downgrade a Standard/Full plan to use a Lite path.', 'risk/no-downgrade');
   requireClause(documents.lifecycle, 'Standard/Full must enter `design-review`, obtain a current design receipt, then enter `design-approved` before `task-ready`.', 'risk/design-review');
   requireClause(documents.gates, 'C2 enforcement applies to the supported routed controller path.', 'repair/policy');
-  requireClause(documents.gates, 'At most two normal remediation attempts are allowed.', 'repair/attempts');
-  requireClause(documents.gates, 'Exactly one fresh-context root-cause pass follows those attempts.', 'repair/root-cause');
+  requireClause(documents.gates, 'Repair continues until the independent review passes or stalls with no new evidence.', 'repair/attempts');
   requireClause(documents.delivery, '`integration-review` is not release-ready.', 'release/evidence');
   requireClause(documents.review, 'Review specification compliance before code quality.', 'review/order');
-  requireClause(documents.review, 'Lite allows clearly labelled self-review; actual independent review must be labelled accurately.', 'review/lite');
+  requireClause(documents.review, 'Journaled changes require a distinct platform session from the recorded implementer or a human receipt.', 'review/journaled');
   requireClause(documents.review, 'Standard/Full requires a distinct platform session from the recorded implementer or a human receipt; a missing implementer session cannot prove platform independence.', 'review/provenance');
   requireClause(documents.review, 'Full also requires current, candidate-bound architecture, security, and NFR assessments', 'review/full-assessments');
   requireClause(documents.review, 'Manager retains final-response ownership.', 'review/manager');
-  requireClause(documents.components, 'Load Superpowers methods explicitly and selectively.', 'methods/loading');
+  requireClause(documents.components, 'Load stage methods by gap, not by brand name.', 'methods/loading');
   requireClause(documents.components, 'Do not inherit automatic worktree, commit, push, merge, hooks, telemetry, model, permission, or MCP changes.', 'methods/inheritance');
+  requireClause(documents.components, 'leo-dev commit may create a local git commit', 'methods/local-commit');
+  requireClause(documents.autonomy, 'Local commit is allowed only after independent review passes and evidence matches the current tree.', 'autonomy/local-commit');
   requireClause(documents.gates, 'Gate failure never authorizes test deletion, assertion weakening, threshold lowering, or hidden failures.', 'gate/safety');
   const delivery = withoutMarkdownEmphasis(documents.delivery);
   requireClause(delivery, '通过：本轮实际执行并符合验收要求。', 'evidence/passed');
@@ -99,15 +103,19 @@ function validateSemantics(documents: Documents, commands: Set<string>) {
   for (const category of authorityCategories) requireAuthorityClause(documents.autonomy, category);
 
   forbidClause(documents.skill, 'Use BMAD as a second public workflow.', 'single-entry');
+  forbidClause(documents.skill, 'truly tiny unambiguous edits', 'skill/tiny-edit');
   forbidClause(documents.lifecycle, 'A caller may silently downgrade a Standard/Full plan to use a Lite path.', 'risk/no-downgrade');
   forbidClause(documents.lifecycle, 'Standard/Full may enter task-ready without design review.', 'risk/design-review');
   forbidClause(documents.gates, 'C2 enforcement is limited to the supported Lite controller path.', 'repair/policy');
   forbidClause(documents.gates, 'Unlimited remediation attempts are allowed.', 'repair/attempts');
+  forbidClause(documents.gates, 'At most two normal remediation attempts are allowed.', 'repair/attempts-cap');
   forbidClause(documents.gates, 'An additional fresh-context root-cause pass is allowed.', 'repair/root-cause');
   forbidClause(documents.delivery, '`integration-review` is release-ready.', 'release/evidence');
   forbidClause(documents.review, 'Review code quality before specification compliance.', 'review/order');
   forbidClause(documents.review, 'Same-session role-play is independent Standard/Full review.', 'review/provenance');
+  forbidClause(documents.review, 'Lite allows clearly labelled self-review; actual independent review must be labelled accurately.', 'review/lite');
   forbidClause(documents.review, 'Full needs no candidate-bound architecture, security, and NFR assessments.', 'review/full-assessments');
+  forbidClause(documents.components, 'Load Superpowers methods explicitly and selectively.', 'methods/loading');
   forbidClause(documents.components, 'Automatically inherit worktree, commit, push, merge, hooks, telemetry, model, permission, and MCP changes.', 'methods/inheritance');
   forbidClause(documents.gates, 'Gate failure authorizes test deletion, assertion weakening, threshold lowering, and hidden failures.', 'gate/safety');
   forbidClause(documents.delivery, 'Report not-run evidence as passed.', 'evidence/not-run');
@@ -128,7 +136,9 @@ describe('develop portable operating contract', () => {
     const skill = await readFile(join(skillDirectory, 'SKILL.md'), 'utf8');
     expect(Object.isFrozen(references)).toBe(true);
     expect(frontmatter(skill)).toMatchObject({ name: 'develop' });
-    expect([...linkedReferences(skill)].sort()).toEqual([...references].sort());
+    const linked = linkedReferences(skill);
+    for (const path of linked) expect(references, `linked ${path} must be in the frozen inventory`).toContain(path);
+    expect(linked).toContain('references/host-subagents.md');
     expect([...portableFiles].sort()).toEqual(['SKILL.md', ...references, 'references/upstream/bmad-team-LICENSE.txt', ...upstreamPortableFiles].sort());
     await Promise.all(references.map(async (path) => expect((await stat(join(skillDirectory, path))).isFile()).toBe(true)));
   });
@@ -145,7 +155,9 @@ describe('develop portable operating contract', () => {
 
   test('has explicit bypass, approved-spec reuse, one-question discovery, and authority boundaries', async () => {
     const { skill, autonomy } = await loadDocuments();
-    expect(skill).toContain('Direct answers, read-only review/diagnosis, or truly tiny unambiguous edits');
+    expect(skill).not.toContain('truly tiny unambiguous edits');
+    expect(skill).toContain('Direct answers and read-only review/diagnosis bypass durable change state.');
+    expect(skill).toContain('Any product-code or behavior change enters the full cycle.');
     expect(skill).toContain('reuse it without a second interview or competing specification');
     expect(skill).toContain('ask exactly one highest-leverage material question at a time');
     expect(autonomy).toContain('A historic “continue” is not operation-specific approval.');
@@ -170,7 +182,10 @@ describe('develop portable operating contract', () => {
       ['risk downgrade', { ...documents, lifecycle: replaceRequired(documents.lifecycle, 'a caller must not silently downgrade a Standard/Full plan to use a Lite path.', 'A caller may silently downgrade a Standard/Full plan to use a Lite path.', 'risk downgrade') }],
       ['missing design review', { ...documents, lifecycle: replaceRequired(documents.lifecycle, 'Standard/Full must enter `design-review`, obtain a current design receipt, then enter `design-approved` before `task-ready`.', 'Standard/Full may enter task-ready without design review.', 'missing design review') }],
       ['unsupported Lite-only repair', { ...documents, gates: replaceRequired(documents.gates, 'C2 enforcement applies to the supported routed controller path.', 'C2 enforcement is limited to the supported Lite controller path.', 'unsupported Lite-only repair') }],
-      ['mislabelled independent review', { ...documents, review: replaceRequired(documents.review, 'Lite allows clearly labelled self-review; actual independent review must be labelled accurately.', 'Every Lite review must be called self-review regardless of actual reviewer provenance.', 'mislabelled independent review') }],
+      ['tiny-edit bypass', { ...documents, skill: replaceRequired(documents.skill, 'Direct answers and read-only review/diagnosis bypass durable change state.', 'Direct answers, read-only review/diagnosis, or truly tiny unambiguous edits bypass durable change state.', 'tiny-edit bypass') }],
+      ['capped repair', { ...documents, gates: replaceRequired(documents.gates, 'Repair continues until the independent review passes or stalls with no new evidence.', 'At most two normal remediation attempts are allowed.', 'capped repair') }],
+      ['mislabelled independent review', { ...documents, review: replaceRequired(documents.review, 'Journaled changes require a distinct platform session from the recorded implementer or a human receipt.', 'Lite allows clearly labelled self-review; actual independent review must be labelled accurately.', 'mislabelled independent review') }],
+      ['brand-required methods', { ...documents, components: replaceRequired(documents.components, 'Load stage methods by gap, not by brand name.', 'Load Superpowers methods explicitly and selectively.', 'brand-required methods') }],
       ['missing Full assessments', { ...documents, review: replaceRequired(documents.review, 'Full also requires current, candidate-bound architecture, security, and NFR assessments', 'Full needs no candidate-bound architecture, security, and NFR assessments', 'missing Full assessments') }],
       ['release ready', { ...documents, delivery: replaceRequired(documents.delivery, '`integration-review` is not release-ready.', '`integration-review` is release-ready.', 'release ready') }],
     ];
@@ -186,6 +201,10 @@ describe('develop portable operating contract', () => {
       ['missing design review', { ...documents, lifecycle: `${documents.lifecycle}\nStandard/Full may enter task-ready without design review.` }],
       ['Lite-only controller repair', { ...documents, gates: `${documents.gates}\nC2 enforcement is limited to the supported Lite controller path.` }],
       ['unlimited repair', { ...documents, gates: `${documents.gates}\nUnlimited remediation attempts are allowed.` }],
+      ['capped repair', { ...documents, gates: `${documents.gates}\nAt most two normal remediation attempts are allowed.` }],
+      ['tiny-edit bypass', { ...documents, skill: `${documents.skill}\ntruly tiny unambiguous edits` }],
+      ['lite self-review', { ...documents, review: `${documents.review}\nLite allows clearly labelled self-review; actual independent review must be labelled accurately.` }],
+      ['brand-required methods', { ...documents, components: `${documents.components}\nLoad Superpowers methods explicitly and selectively.` }],
       ['extra root-cause', { ...documents, gates: `${documents.gates}\nAn additional fresh-context root-cause pass is allowed.` }],
       ['release ready', { ...documents, delivery: `${documents.delivery}\n\`integration-review\` is release-ready.` }],
       ['review order', { ...documents, review: `${documents.review}\nReview code quality before specification compliance.` }],

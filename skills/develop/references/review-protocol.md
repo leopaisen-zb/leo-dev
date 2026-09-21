@@ -14,9 +14,9 @@ Review specification compliance before code quality. 先审范围、已批准规
 
 审查返回 missing / partial / contradicts / unrequested 的具体项及证据，不为填满表格强造问题。草案或实现缺陷在原范围内修复；意图/架构/验收变更交回用户决定并重验相关产物。方法报告缺失先补证据，不制造失败后要求作者改正确的代码。
 
-Lite allows clearly labelled self-review; actual independent review must be labelled accurately. Standard/Full requires a distinct platform session from the recorded implementer or a human receipt; a missing implementer session cannot prove platform independence. Full also requires current, candidate-bound architecture, security, and NFR assessments with their own IDs, provenance, findings hashes, timestamps, and expiry. Otherwise remain review-required. 不能把同一上下文的角色扮演称为独立审查，也不能把真实的独立审查误记为自审。Manager retains final-response ownership.
+Journaled changes require a distinct platform session from the recorded implementer or a human receipt. A missing implementer session cannot prove platform independence. agent-asserted is not independent review. Standard/Full requires a distinct platform session from the recorded implementer or a human receipt; a missing implementer session cannot prove platform independence. Full also requires current, candidate-bound architecture, security, and NFR assessments with their own IDs, provenance, findings hashes, timestamps, and expiry. Otherwise remain review-required. 不能把同一上下文的角色扮演称为独立审查，也不能把真实的独立审查误记为自审。Manager retains final-response ownership.
 
-通过或拒绝都按当前 reviewContext 绑定 task、revision、generation、Run 和候选哈希，保留实际 findings。`REVIEW_REJECTED` 表示失败已记录并进入修复/阻塞，不是成功交付。被策略拒绝的 receipt 不消耗修复次数。本地 receipt 的 provenance/session 字段是未经认证的声明；独立性以实际会话或人类证据为依据。
+通过或拒绝都按当前 reviewContext 绑定 task、revision、generation、Run 和候选哈希，保留实际 findings。`REVIEW_REJECTED` 表示失败已记录并进入修复/阻塞，不是成功交付。被策略拒绝的 receipt 不记为一次失败，也不构成新证据。本地 receipt 的 provenance/session 字段是未经认证的声明；独立性以实际会话或人类证据为依据。
 
 已通过[待审接续](lifecycle.md)恢复时，回执还须携带当前 recoveryId，时间不能早于该恢复记录；先重新核对当前候选再签发本地审查声明。未恢复的回执不带此字段。接续 ID 不授予写代码权限，也不改变原 Run/租约代次；不能把旧的未接续回执当成当前审查。诊断用 reviewRecovery 不属于回执字段。
 

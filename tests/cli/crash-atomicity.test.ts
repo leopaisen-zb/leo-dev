@@ -320,7 +320,7 @@ describe('controller crash-atomic batches', () => {
     expectExit(cli(root, 'run-gates', '--change', 'review-crash', '--task', 'task-1'), 0, 'GATES_PASSED');
     expectExit(cli(root, 'submit', '--change', 'review-crash', '--task', 'task-1'), 0, 'SUBMITTED_FOR_REVIEW');
     const context = (cli(root, 'status', '--change', 'review-crash').envelope.state as { reviewContext: Record<string, unknown> }).reviewContext;
-    const path = await receipt({ receiptId: 'review-crash', provenance: 'agent-asserted', actorLabel: 'self review', sessionId: 'session', ...context, findingsHash: digest('none'), verdict: 'pass', timestamp: issuedAt(), expiresAt: expiresAt() });
+    const path = await receipt({ receiptId: 'review-crash', provenance: 'human-confirmed', actorLabel: 'self review', sessionId: 'session', ...context, findingsHash: digest('none'), verdict: 'pass', timestamp: issuedAt(), expiresAt: expiresAt() });
     await expectCrash(new Controller().execute('review', { repo: root, change: 'review-crash', task: 'task-1', receipt: path, faultAt: 'after-batch-projection' }));
     expectExit(cli(root, 'status', '--change', 'review-crash'), 7, 'BLOCKED');
     const resumed = cli(root, 'resume', '--change', 'review-crash');

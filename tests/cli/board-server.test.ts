@@ -6,7 +6,7 @@ import type { BoardObservation } from '../../packages/cli/src/board/types.js';
 const observation: BoardObservation = {
   schemaVersion: 1, observedAt: '2026-09-16T00:00:00.000Z', repositoryRoot: '/fixed/repo', changeId: 'fixed-change',
   availability: 'available', hostLiveStatus: 'unknown', change: { state: 'executing', revision: 1, revisionId: 'r1', blockers: [] },
-  tasks: [{ id: '<img src=x onerror=alert(1)>', title: 'safe text', revision: 1, state: 'implementing', column: 'active', blocked: false, requirements: ['must remain text'], runId: 'run-1', assignmentSession: 'fixture', runState: 'running', leaseActive: true, lastActivity: null, blockers: [], gate: null, review: null }],
+  tasks: [{ id: '<img src=x onerror=alert(1)>', title: 'safe text', revision: 1, state: 'implementing', column: 'doing', blocked: false, requirements: ['must remain text'], runId: 'run-1', assignmentSession: 'fixture', runState: 'running', leaseActive: true, lastActivity: null, blockers: [], gate: null, review: null, reviewBadge: 'none' }],
   recordedTeam: null,
 };
 
@@ -21,6 +21,36 @@ function request(port: number, path: string, method = 'GET', host = '127.0.0.1')
 }
 
 describe('local board server', () => {
+  test('renders three Chinese columns and a review badge, not a Review column', async () => {
+    const { boardHtml, boardCss, boardJs } = await import('../../packages/cli/src/board/assets.ts');
+    expect(boardJs).toContain("todo:'待办'");
+    expect(boardJs).toContain("doing:'进行中'");
+    expect(boardJs).toContain("done:'完成'");
+    expect(boardJs).not.toContain("queued:'Queued'");
+    expect(boardJs).not.toContain("review:'Review'");
+    expect(boardJs).toContain('reviewBadge');
+    expect(boardCss).toContain('repeat(3,');
+    expect(boardCss).not.toContain('repeat(4,');
+    expect(boardHtml).toContain('Leo Dev 看板');
+    expect(boardCss).toContain('#FFF6E8');
+  });
+
+  test('passes reviewBadge through observation JSON without rewriting it', async () => {
+    const reviewing: BoardObservation = {
+      ...observation,
+      tasks: [{ ...observation.tasks![0], state: 'reviewing', column: 'doing', reviewBadge: 'reviewing' }],
+    };
+    const board = await createBoardServer({ repositoryRoot: '/fixed/repo', changeId: 'fixed-change', observe: async () => reviewing });
+    const address = await board.listen();
+    try {
+      const response = await request(address.port, '/api/observation');
+      expect(response.status).toBe(200);
+      const body = JSON.parse(response.body) as BoardObservation;
+      expect(body.tasks?.[0]?.reviewBadge).toBe('reviewing');
+      expect(body.tasks?.[0]?.column).toBe('doing');
+    } finally { await board.close(); }
+  });
+
   test('serves only fixed assets and an explicitly bound observation', async () => {
     const board = await createBoardServer({ repositoryRoot: '/fixed/repo', changeId: 'fixed-change', observe: async () => observation });
     const address = await board.listen();

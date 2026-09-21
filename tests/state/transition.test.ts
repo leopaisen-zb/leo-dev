@@ -35,6 +35,7 @@ describe('normative state machines', () => {
   });
 
   test('applies the review matrix and blocks task recovery without a matching resolution', () => {
+    expect(transitionTask('reviewing', 'done', { risk: 'lite', reviewReceiptAccepted: true, reviewProvenance: 'agent-asserted', independentSession: true })).toMatchObject({ ok: false });
     expect(transitionTask('reviewing', 'done', { risk: 'standard', reviewReceiptAccepted: true, reviewProvenance: 'agent-asserted', independentSession: true })).toMatchObject({ ok: false });
     expect(transitionTask('reviewing', 'done', { risk: 'standard', reviewReceiptAccepted: true, reviewProvenance: 'platform-attested', independentSession: true }).ok).toBe(true);
     expect(transitionTask('blocked', 'ready', { receiptMatched: false, newLeaseGeneration: true })).toMatchObject({ ok: false });

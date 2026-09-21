@@ -68,7 +68,7 @@ async function completeTask(root: string, changeId: string, taskId: string): Pro
   expect(cli(root, 'run-gates', '--change', changeId, '--task', taskId, '--run', runId.runId).status).toBe(0);
   expect(cli(root, 'submit', '--change', changeId, '--task', taskId).status).toBe(0);
   const context = cli(root, 'status', '--change', changeId).envelope.state!.reviewContext as Record<string, string | number>;
-  const path = await receipt(`review-${taskId}`, { ...context, receiptId: `${changeId}-${taskId}-review-${Date.now()}-${Math.random()}`, provenance: 'agent-asserted', actorLabel: 'TEST-ONLY independent reviewer; issuer not authenticated', sessionId: `review-session-${taskId}`, findingsHash: sha256(`no findings ${taskId}`), verdict: 'pass', timestamp: new Date().toISOString(), expiresAt: new Date(Date.now() + 60 * 60_000).toISOString() });
+  const path = await receipt(`review-${taskId}`, { ...context, receiptId: `${changeId}-${taskId}-review-${Date.now()}-${Math.random()}`, provenance: 'human-confirmed', actorLabel: 'TEST-ONLY independent reviewer; issuer not authenticated', sessionId: `review-session-${taskId}`, findingsHash: sha256(`no findings ${taskId}`), verdict: 'pass', timestamp: new Date().toISOString(), expiresAt: new Date(Date.now() + 60 * 60_000).toISOString() });
   expect(cli(root, 'review', '--change', changeId, '--task', taskId, '--receipt', path).status).toBe(0);
   return path;
 }
@@ -626,7 +626,7 @@ describe('compiled public specification revision', () => {
     expect(recovered.envelope.state).toMatchObject({ reviewContext: { taskId: 'task-a', taskRevision: 2 }, reviewRecovery: { evidence: { gateStatus: 'succeeded' } } });
   }, 40_000);
 
-  test('requires fresh-debug provenance across earlier task revisions', async () => {
+  test('keeps remediating after historic failures with distinct findings across earlier task revisions', async () => {
     const root = await fixture(); const changeId = 'revision-cumulative-provenance';
     expect(cli(root, 'init', '--change', changeId, '--spec', 'spec-v1.md').status).toBe(0);
     expect(cli(root, 'route', '--change', changeId, '--plan', 'plan-v1.json').status).toBe(0);
@@ -634,16 +634,17 @@ describe('compiled public specification revision', () => {
     await journal.withExclusive(async (transaction) => {
       for (let ordinal = 1; ordinal <= 3; ordinal += 1) {
         await transaction.append({ changeId, taskId: 'task-a', taskRevision: 1, leaseGeneration: ordinal, type: 'run.claimed', payload: { runId: `historic-run-${ordinal}`, lease: { taskId: 'task-a', taskRevision: 1, generation: ordinal, inputTreeHash: '1'.repeat(64), expiresAt: '2030-01-01T00:00:00.000Z' }, operationFingerprint: `${ordinal}`.repeat(64), sessionId: `historic-session-${ordinal}`, attemptKind: ordinal === 1 ? 'initial' : 'remediation' } });
-        await transaction.append({ changeId, taskId: 'task-a', taskRevision: 1, leaseGeneration: ordinal, type: 'task.attempt.failed', payload: { receiptId: `historic-failure-${ordinal}`, findingsHash: `${ordinal + 3}`.repeat(64), ordinal, nextAttempt: ordinal === 3 ? 'fresh-debug' : 'remediation' } });
+        await transaction.append({ changeId, taskId: 'task-a', taskRevision: 1, leaseGeneration: ordinal, type: 'task.attempt.failed', payload: { receiptId: `historic-failure-${ordinal}`, findingsHash: `${ordinal + 3}`.repeat(64), ordinal, nextAttempt: 'remediation' } });
       }
     });
     await applyRevisionFor(root, changeId, 'spec-v2.md', 'plan-v2.json', 'v2');
     expect(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'task-ready').status).toBe(0);
     expect(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'executing').status).toBe(0);
     const reused = cli(root, 'claim', '--change', changeId, '--task', 'task-a', '--session', 'historic-session-3', '--dry-run');
-    expect(reused.status).toBe(5); expect(reused.envelope.code).toBe('CONFLICT');
+    expect(reused.status, JSON.stringify(reused.envelope)).toBe(0);
     const fresh = cli(root, 'claim', '--change', changeId, '--task', 'task-a', '--session', 'fresh-revision-session', '--dry-run');
     expect(fresh.status, JSON.stringify(fresh.envelope)).toBe(0);
+    expect(cli(root, 'status', '--change', changeId).envelope.state).toMatchObject({ attempts: { 'task-a': { consumed: 3, nextKind: 'remediation' } } });
   }, 30_000);
 
   test('uses semantic authority for team epochs and archives only the immediately previous team across three versions', async () => {
@@ -807,7 +808,7 @@ describe('compiled public specification revision', () => {
     const claimed = cli(root, 'claim', '--change', changeId, '--task', 'task-a'); const runId = (claimed.envelope.state!.run as { runId: string }).runId;
     expect(cli(root, 'run-gates', '--change', changeId, '--task', 'task-a', '--run', runId).status).toBe(0); expect(cli(root, 'submit', '--change', changeId, '--task', 'task-a').status).toBe(0);
     const context = cli(root, 'status', '--change', changeId).envelope.state!.reviewContext as Record<string, unknown>;
-    const rejection = await receipt('settled-remediation-review', { ...context, receiptId: 'settled-remediation-review', provenance: 'agent-asserted', actorLabel: 'TEST-ONLY fixture reviewer; issuer not authenticated', sessionId: 'settled-remediation-session', findingsHash: sha256('bounded finding'), verdict: 'reject', timestamp: new Date().toISOString(), expiresAt: new Date(Date.now() + 60 * 60_000).toISOString() });
+    const rejection = await receipt('settled-remediation-review', { ...context, receiptId: 'settled-remediation-review', provenance: 'human-confirmed', actorLabel: 'TEST-ONLY fixture reviewer; issuer not authenticated', sessionId: 'settled-remediation-session', findingsHash: sha256('bounded finding'), verdict: 'reject', timestamp: new Date().toISOString(), expiresAt: new Date(Date.now() + 60 * 60_000).toISOString() });
     expect(cli(root, 'review', '--change', changeId, '--task', 'task-a', '--receipt', rejection).status).toBe(0);
     expect(cli(root, 'status', '--change', changeId).envelope.state).toMatchObject({ tasks: { 'task-a': { state: 'remediation' } }, leases: { 'task-a': { active: false } } });
     const applied = await applyRevisionFor(root, changeId, 'spec-v2.md', 'plan-v2.json', 'v2');

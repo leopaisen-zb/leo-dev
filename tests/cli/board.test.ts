@@ -168,7 +168,7 @@ test('observes a real CLI-produced task history without changing any file', asyn
   const observed = cli(root, 'observe', '--change', 'board');
   expect(observed.status, JSON.stringify(observed.envelope)).toBe(0);
   expect(observed.envelope.code).toBe('OBSERVATION');
-  expect(observed.envelope.state).toMatchObject({ availability: 'available', hostLiveStatus: 'unknown', change: { state: 'triage' }, tasks: [{ id: 'board-task', state: 'ready', column: 'queued' }] });
+  expect(observed.envelope.state).toMatchObject({ availability: 'available', hostLiveStatus: 'unknown', change: { state: 'triage' }, tasks: [{ id: 'board-task', state: 'ready', column: 'todo' }] });
   expect(await files(root)).toEqual(before);
 });
 
@@ -248,6 +248,16 @@ async function submittedFixture(risk: 'lite' | 'standard' | 'full' = 'lite', ttl
   expect(submitted).toBeDefined();
   return { root, runId, candidate: candidate!, submitted: submitted! };
 }
+
+test('projects a submitted task onto doing with a reviewing badge', async () => {
+  const { root } = await submittedFixture();
+  const observed = cli(root, 'observe', '--change', 'board');
+  expect(observed.status, JSON.stringify(observed.envelope)).toBe(0);
+  expect(observed.envelope.state).toMatchObject({
+    availability: 'available',
+    tasks: [{ id: 'board-task', state: 'review-required', column: 'doing', reviewBadge: 'reviewing' }],
+  });
+});
 
 describe('completed Gate observation fixture', () => {
   let prepared: Awaited<ReturnType<typeof submittedFixture>>;
@@ -384,7 +394,7 @@ describe.each(['lite', 'standard'] as const)('normally admitted %s review fixtur
 
   test(`shows a normally admitted ${risk} review from its certified submission`, async () => {
     const { root, submitted } = prepared;
-    const path = await receiptFile(`${risk}-review`, reviewReceipt(submitted, risk === 'lite' ? { provenance: 'agent-asserted', sessionId: 'reviewer-lite' } : {}));
+    const path = await receiptFile(`${risk}-review`, reviewReceipt(submitted, risk === 'lite' ? { provenance: 'platform-attested', sessionId: 'reviewer-lite' } : {}));
     const reviewed = cli(root, 'review', '--change', 'board', '--task', 'board-task', '--receipt', path);
     expect(reviewed.status, JSON.stringify(reviewed.envelope)).toBe(0);
 
@@ -520,7 +530,7 @@ test.each(['missing', 'wrong', 'predating'] as const)('refuses a recovered candi
 
 test('keeps the original certified submit observable through legitimate expired-review recovery', async () => {
   const { root, submitted, recoveryId } = await recoveredSubmittedFixture();
-  const receipt = await receiptFile('recovered-review', reviewReceipt(submitted, { recoveryId, provenance: 'agent-asserted', sessionId: 'recovery-reviewer', timestamp: new Date().toISOString() }));
+  const receipt = await receiptFile('recovered-review', reviewReceipt(submitted, { recoveryId, provenance: 'platform-attested', sessionId: 'recovery-reviewer', timestamp: new Date().toISOString() }));
   const reviewed = cli(root, 'review', '--change', 'board', '--task', 'board-task', '--receipt', receipt);
   expect(reviewed.status, JSON.stringify(reviewed.envelope)).toBe(0);
 

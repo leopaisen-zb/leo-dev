@@ -18,3 +18,6 @@ experiments/
 docs/research/
 docs/superpowers/plans/
 examples/mochi-board/.data/
+
+# Isolated local worktrees
+.worktrees/

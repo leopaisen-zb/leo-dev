@@ -15,4 +15,4 @@
 - destructive data action requires exact operation-specific authority.
 - irreversible data action requires exact operation-specific authority.
 
-不自动 commit、push、开 PR、合并、发布、部署、安装服务、扩权或删除工作树/分支。上述是流程边界，不是安全沙箱或同权限进程的强制防护。
+Local commit is allowed only after independent review passes and evidence matches the current tree. 使用 `leo-dev commit --change <id> --message <text>`；不准 push。不要手写 `git push`。不自动 push、开 PR、合并、发布、部署、安装服务、扩权或删除工作树/分支。上述是流程边界，不是安全沙箱或同权限进程的强制防护。
