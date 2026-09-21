@@ -30,5 +30,5 @@ description: 个人跨项目软件开发入口。用于开发功能、实现方�
 
 ## 自主边界与交付
 
-- 独立审查通过且证据绑当前树之后允许本地 git commit；不准 push。push 仍要用户点名。
+- 独立审查通过且证据绑当前树之后运行 `leo-dev commit --change <id> --message <text>`；不准 push。push 仍要用户点名。
 - 只基于本轮 current evidence 报告通过、失败、未执行、阻塞或不适用。`integration-review` is not release-ready.

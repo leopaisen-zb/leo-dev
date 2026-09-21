@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, open, readFile, realpath, rename } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -156,6 +157,57 @@ function currentStartAuthorization(events: JournalEvent[]): { goal: string; goal
   const payload = record(events[latestIndex]!.payload);
   if (typeof payload.goal !== 'string' || typeof payload.goalHash !== 'string') return undefined;
   return { goal: payload.goal, goalHash: payload.goalHash };
+}
+
+function treeMatchesReviewedCandidate(current: { hash: string; entries: string[] }, rawEvents: JournalEvent[], treeHash: string): boolean {
+  if (current.hash === treeHash) return true;
+  let afterSequence = -1;
+  for (let index = 0; index < rawEvents.length; index += 1) {
+    const event = rawEvents[index]!;
+    if (event.type !== 'controller.batch.prepared') continue;
+    const operations = Array.isArray(record(event.payload).operations) ? record(event.payload).operations as RecordValue[] : [];
+    if (operations.some((operation) => record(operation).type === 'controller.candidate.registered' && record(record(operation).payload).treeHash === treeHash)) {
+      afterSequence = rawEvents[index + 1]?.sequence ?? event.sequence;
+    }
+  }
+  if (afterSequence < 0) return false;
+  const entries = current.entries.slice();
+  const undos: Array<{ relativePath: string; priorHash: string; desiredHash: string }> = [];
+  for (let index = 0; index < rawEvents.length; index += 1) {
+    const event = rawEvents[index]!;
+    if (event.type !== 'controller.batch.prepared') continue;
+    const committed = rawEvents[index + 1];
+    if (committed?.type !== 'controller.batch.committed' || committed.sequence <= afterSequence) continue;
+    const projections = Array.isArray(record(event.payload).projections) ? record(event.payload).projections as RecordValue[] : [];
+    for (const projection of projections) {
+      if (typeof projection.relativePath === 'string' && typeof projection.priorHash === 'string' && typeof projection.desiredHash === 'string') {
+        undos.push({ relativePath: projection.relativePath, priorHash: projection.priorHash, desiredHash: projection.desiredHash });
+      }
+    }
+  }
+  for (const projection of undos.reverse()) {
+    const index = entries.findIndex((entry) => entry.split('\0', 1)[0] === projection.relativePath);
+    if (index < 0) return false;
+    const parts = entries[index]!.split('\0');
+    if (parts[2] !== projection.desiredHash) return false;
+    entries[index] = `${parts[0]}\0${parts[1]}\0${projection.priorHash}`;
+  }
+  return hash(`${TREE_IGNORE_POLICY_VERSION}\n${entries.join('\n')}`) === treeHash;
+}
+
+function currentIndependentPass(events: JournalEvent[], current: { hash: string; entries: string[] }, rawEvents: JournalEvent[], at = new Date()): RecordValue | undefined {
+  let latest: RecordValue | undefined;
+  for (const event of events) {
+    if (event.type !== 'receipt.review.ingested') continue;
+    const receipt = record(record(event.payload).receipt);
+    if (receipt.verdict !== 'pass' || typeof receipt.treeHash !== 'string' || !treeMatchesReviewedCandidate(current, rawEvents, receipt.treeHash)) continue;
+    const independent = receipt.provenance === 'human-confirmed'
+      || (receipt.provenance === 'platform-attested' && typeof receipt.sessionId === 'string' && receipt.sessionId.length > 0);
+    if (!independent) continue;
+    if (typeof receipt.expiresAt === 'string' && Number.isFinite(Date.parse(receipt.expiresAt)) && Date.parse(receipt.expiresAt) <= at.getTime()) continue;
+    latest = receipt;
+  }
+  return latest;
 }
 
 export function teamMutationBarrierReason(events: JournalEvent[]): string | undefined {
@@ -2224,6 +2276,29 @@ export class Controller {
     await commitControllerBatch({ repositoryRoot, changeId, journal, priorEvents: events, kind: 'start', faultAt: options.faultAt, operations: [{ type: 'controller.start.authorized', payload: { goal, goalHash } }] });
     await writeSnapshotStrict(runtimePaths(repositoryRoot, changeId).snapshot, journal);
     return result('START_AUTHORIZED', { ...(await this.state(repositoryRoot, changeId)), goal, goalHash });
+  }
+
+  async commit(options: CommandOptions): Promise<CommandResult> {
+    const repositoryRoot = await realpath(this.repository(options));
+    const changeId = this.changeId(options);
+    const message = stringOption(options, 'message')!;
+    const events = await this.readEvents(repositoryRoot, changeId);
+    const baseline = await captureBaseline(repositoryRoot);
+    const current = await canonicalTreeHash(repositoryRoot);
+    const rawEvents = (await new Journal(runtimePaths(repositoryRoot, changeId).journal).replayStrict()).events;
+    if (!baseline.git.available) throw new ControllerError(7, 'BLOCKED', 'not a git repository');
+    if (!currentIndependentPass(events, current, rawEvents)) throw new ControllerError(7, 'BLOCKED', 'independent review pass bound to the current tree is required');
+    if (baseline.staged.length === 0) throw new ControllerError(7, 'BLOCKED', 'nothing staged');
+    if (options.dryRun === true) return result('DRY_RUN', { planned: true, pushed: false });
+    const recorded = spawnSync('git', ['commit', '-m', message], { cwd: repositoryRoot, encoding: 'utf8' });
+    if (recorded.status !== 0) throw new ControllerError(7, 'BLOCKED', (recorded.stderr || recorded.stdout || 'git commit failed').trim());
+    const head = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' });
+    const commit = head.stdout.trim();
+    if (head.status !== 0 || !/^[0-9a-f]{40}$/i.test(commit)) throw new ControllerError(7, 'BLOCKED', 'git commit did not produce a revision');
+    const journal = new Journal(runtimePaths(repositoryRoot, changeId).journal);
+    await commitControllerBatch({ repositoryRoot, changeId, journal, priorEvents: events, kind: 'commit', faultAt: options.faultAt, operations: [{ type: 'controller.commit.recorded', payload: { commit, message, pushed: false } }] });
+    await writeSnapshotStrict(runtimePaths(repositoryRoot, changeId).snapshot, journal);
+    return result('COMMITTED', { commit, pushed: false });
   }
 
   async revise(options: CommandOptions): Promise<CommandResult> {
