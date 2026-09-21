@@ -74,12 +74,10 @@ The local read-only board shows a change's recorded tasks, assignments, blockers
 team activity, and test/review evidence from the controller journal.
 
 <p align="center">
-  <img src="assets/leo-dev-board.png" width="920" alt="Leo Dev showing a completed benchmark repair, recorded test and independent review evidence, and two recorded team members">
+  <img src="assets/leo-dev-board.png" width="920" alt="Leo Dev 看板 with three Chinese columns 待办, 进行中 and 完成">
 </p>
 
-This is actual state from a coding-benchmark run. The [mobile view](assets/leo-dev-board-mobile.png)
-shows the same recorded evidence at 390 pixels. A recorded pass and its relationship
-to the current tree are displayed separately.
+This is the live three-column board: 待办 / 进行中 / 完成. Review is evidence on the card, not a fourth column. The [narrow view](assets/leo-dev-board-mobile.png) stacks the same columns. A recorded verdict and its relationship to the current tree are displayed separately.
 
 ```sh
 node packages/cli/dist/index.js board --repo /absolute/path/to/project --change your-change-id
