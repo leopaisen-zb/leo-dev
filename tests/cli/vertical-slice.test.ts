@@ -229,7 +229,7 @@ describe('compiled public CLI contract', () => {
     const result = cli(root, '--help');
     expectExit(result, 0, 'HELP');
     expect((result.envelope.state as { commands: string[] }).commands).toEqual([
-      'init', 'inspect', 'observe', 'board', 'route', 'revise', 'status', 'transition', 'claim', 'run-gates', 'submit',
+      'init', 'inspect', 'observe', 'board', 'route', 'start', 'commit', 'revise', 'status', 'transition', 'claim', 'run-gates', 'submit',
       'review', 'approve', 'waive', 'resolve', 'reconcile', 'resume', 'team', 'doctor',
     ]);
   });
