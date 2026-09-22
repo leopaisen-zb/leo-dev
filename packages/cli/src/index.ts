@@ -3,6 +3,7 @@ import { Command, CommanderError } from 'commander';
 import { registerApprove } from './commands/approve.js'; import { registerBoard } from './commands/board.js'; import { registerClaim } from './commands/claim.js'; import { registerCommit } from './commands/commit.js'; import { registerDoctor } from './commands/doctor.js'; import { registerInit } from './commands/init.js'; import { registerInspect } from './commands/inspect.js'; import { registerObserve } from './commands/observe.js'; import { registerReconcile } from './commands/reconcile.js'; import { registerResolve } from './commands/resolve.js'; import { registerResume } from './commands/resume.js'; import { registerRevise } from './commands/revise.js'; import { registerReview } from './commands/review.js'; import { registerRoute } from './commands/route.js'; import { registerRunGates } from './commands/run-gates.js'; import { registerStart } from './commands/start.js'; import { registerStatus } from './commands/status.js'; import { registerSubmit } from './commands/submit.js'; import { registerTeam } from './commands/team.js'; import { registerTransition } from './commands/transition.js'; import { registerWaive } from './commands/waive.js';
 import { Controller } from './controller/controller.js';
 import { ControllerError, failure, result, type CommandOptions, type CommandResult } from './controller/types.js';
+import { defaultClaimTtlMs } from './state/claim-ttl.js';
 
 const commandNames = ['init', 'inspect', 'observe', 'board', 'route', 'start', 'commit', 'revise', 'status', 'transition', 'claim', 'run-gates', 'submit', 'review', 'approve', 'waive', 'resolve', 'reconcile', 'resume', 'team', 'doctor'];
 const program = new Command(); const controller = new Controller(); let commandResult: CommandResult | undefined;
@@ -25,10 +26,15 @@ function helpState(argv: string[]): object {
   }
   if (!commandName) return { commands: commandNames };
   const command = program.commands.find((candidate) => candidate.name() === commandName);
-  return {
+  const state = {
     commands: commandNames,
     command: commandName,
     options: [...program.options, ...(command?.options ?? [])].map((option) => option.flags),
+  };
+  if (commandName !== 'claim') return state;
+  return {
+    ...state,
+    descriptions: [{ flags: '--ttl <milliseconds>', description: `when omitted, the default lease is ${defaultClaimTtlMs} milliseconds (1 hour)` }],
   };
 }
 

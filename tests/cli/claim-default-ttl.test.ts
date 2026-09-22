@@ -73,3 +73,20 @@ test('claim --ttl still overrides the default', async () => {
   expect(expiresAt).toBeGreaterThanOrEqual(before + 60_000 - 5_000);
   expect(expiresAt).toBeLessThanOrEqual(after + 60_000 + 5_000);
 }, 30_000);
+
+test('claim --help states the default lease', () => {
+  const help = spawnSync(process.execPath, [executable, 'claim', '--help'], { cwd: repository, encoding: 'utf8', timeout: 20_000, killSignal: 'SIGKILL' });
+  expect(help.error).toBeUndefined();
+  expect(help.status).toBe(0);
+  const envelope = JSON.parse(help.stdout.trim()) as Envelope & { state: { options: string[]; descriptions?: unknown } };
+  expect(envelope.code).toBe('HELP');
+  expect(envelope.state.descriptions).toEqual([{ flags: '--ttl <milliseconds>', description: 'when omitted, the default lease is 3600000 milliseconds (1 hour)' }]);
+  expect(envelope.state.options).toContain('--ttl <milliseconds>');
+  const route = spawnSync(process.execPath, [executable, 'route', '--help'], { cwd: repository, encoding: 'utf8', timeout: 20_000, killSignal: 'SIGKILL' });
+  expect(route.error).toBeUndefined();
+  expect(route.status).toBe(0);
+  const routeEnvelope = JSON.parse(route.stdout.trim()) as Envelope & { state: object };
+  expect(routeEnvelope.code).toBe('HELP');
+  expect(route.stdout).not.toContain('3600000');
+  expect(routeEnvelope.state).not.toHaveProperty('descriptions');
+});
