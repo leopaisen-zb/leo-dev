@@ -23,6 +23,7 @@ import { normalizeRepositoryPath } from '../security/paths.js';
 import { loadSchema } from '../schema/load.js';
 import { validateDocument, validateReceipt, validateTaskDefinition, type ReceiptKind } from '../schema/validate.js';
 import { decideFailedAttempt, failedAttemptCount, previousFindingsHash } from '../state/attempt-policy.js';
+import { defaultClaimTtlMs } from '../state/claim-ttl.js';
 import { currentIndependentPass, independentReviewSession } from '../state/commit-pass.js';
 import { Journal, JournalCorruptError, JournalTailMismatchError, recoverJournal, type JournalObservation } from '../state/journal.js';
 import { boardColumn, reviewBadge } from '../board/columns.js';
@@ -626,7 +627,7 @@ export class Controller {
     if (command === 'transition' && options.scope === 'change' && options.to === 'release-evidence') return this.recordReleaseEvidence(options);
     if (command === 'transition' && options.scope === 'change' && options.to === 'archived') return this.archiveRelease(options);
     if (command === 'run-gates') boundedGateOutput(options.maxOutputBytes);
-    if (command === 'claim') positiveInteger(options.ttl, 300_000, '--ttl');
+    if (command === 'claim') positiveInteger(options.ttl, defaultClaimTtlMs, '--ttl');
     let plannedRecovery = false;
     let routeDryRunState: RecordValue | undefined;
     if (command === 'init') {
@@ -2739,7 +2740,7 @@ export class Controller {
     const events = await this.readEvents(repositoryRoot, changeId);
     const plan = await this.planClaim(repositoryRoot, changeId, options, events);
     const { routed, currentTaskState, sessionId, inputTree } = plan;
-    const ttlMs = positiveInteger(options.ttl, 300_000, '--ttl');
+    const ttlMs = positiveInteger(options.ttl, defaultClaimTtlMs, '--ttl');
     const paths = this.paths(repositoryRoot, changeId);
     const journal = new Journal(paths.runtime.journal);
     const lease: Lease = {

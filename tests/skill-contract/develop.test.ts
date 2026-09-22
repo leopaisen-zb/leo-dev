@@ -153,6 +153,12 @@ describe('develop portable operating contract', () => {
     expect(() => validateSemantics(documents, commands)).not.toThrow();
   });
 
+  test('tells Grok to spawn an independent reviewer subagent', async () => {
+    const host = await readFile(join(skillDirectory, 'references/host-subagents.md'), 'utf8');
+    expect(host).toContain('Grok Build');
+    expect(host).toContain('spawn_subagent');
+  });
+
   test('has explicit bypass, approved-spec reuse, one-question discovery, and authority boundaries', async () => {
     const { skill, autonomy } = await loadDocuments();
     expect(skill).not.toContain('truly tiny unambiguous edits');

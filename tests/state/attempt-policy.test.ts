@@ -17,10 +17,19 @@ describe('attempt-policy', () => {
       .toEqual({ target: 'blocked', nextKind: 'blocked', reason: 'no-progress' });
   });
 
-  test('gate failure without findings hash remediates; missing hashes are not the same findings', () => {
+  test('second failure with no findings hash blocks as no-progress', () => {
     expect(decideFailedAttempt({ priorFailures: 0 })).toEqual({ target: 'remediation', nextKind: 'remediation' });
-    expect(decideFailedAttempt({ priorFailures: 1 })).toEqual({ target: 'remediation', nextKind: 'remediation' });
-    expect(decideFailedAttempt({ priorFailures: 4 })).toEqual({ target: 'remediation', nextKind: 'remediation' });
+    expect(decideFailedAttempt({ priorFailures: 1 })).toEqual({ target: 'blocked', nextKind: 'blocked', reason: 'no-progress' });
+    expect(decideFailedAttempt({ priorFailures: 1, previousFindingsHash: '', currentFindingsHash: '' })).toEqual({ target: 'blocked', nextKind: 'blocked', reason: 'no-progress' });
+  });
+
+  test('a new nonempty findings hash still remediates when the other side has none', () => {
+    expect(decideFailedAttempt({ priorFailures: 1, previousFindingsHash: 'old', currentFindingsHash: 'new' }))
+      .toEqual({ target: 'remediation', nextKind: 'remediation' });
+    expect(decideFailedAttempt({ priorFailures: 1, currentFindingsHash: 'new' }))
+      .toEqual({ target: 'remediation', nextKind: 'remediation' });
+    expect(decideFailedAttempt({ priorFailures: 1, previousFindingsHash: 'old' }))
+      .toEqual({ target: 'remediation', nextKind: 'remediation' });
   });
 
   test('reads the last findingsHash for a task', () => {

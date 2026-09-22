@@ -23,12 +23,8 @@ export function decideFailedAttempt(input: {
   currentFindingsHash?: string;
 }): { target: 'remediation' | 'blocked'; nextKind: AttemptKind; reason?: 'no-progress' } {
   if (input.priorFailures === 0) return { target: 'remediation', nextKind: 'remediation' };
-  if (
-    typeof input.previousFindingsHash === 'string' && input.previousFindingsHash.length > 0
-    && typeof input.currentFindingsHash === 'string' && input.currentFindingsHash.length > 0
-    && input.previousFindingsHash === input.currentFindingsHash
-  ) {
-    return { target: 'blocked', nextKind: 'blocked', reason: 'no-progress' };
-  }
+  const previous = typeof input.previousFindingsHash === 'string' && input.previousFindingsHash.length > 0 ? input.previousFindingsHash : undefined;
+  const current = typeof input.currentFindingsHash === 'string' && input.currentFindingsHash.length > 0 ? input.currentFindingsHash : undefined;
+  if (previous === current) return { target: 'blocked', nextKind: 'blocked', reason: 'no-progress' };
   return { target: 'remediation', nextKind: 'remediation' };
 }
