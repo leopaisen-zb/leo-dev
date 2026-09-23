@@ -7,6 +7,12 @@ description: 个人跨项目软件开发入口。用于开发功能、实现方�
 
 `develop` is the only public development entry. 不另建第二套工作流或真源。
 
+## 控制器从哪来
+
+从这次加载的 `skills/develop/SKILL.md` 向上两级是插件根。插件根里有 `runtime/runtime-manifest.json` 时，用本机 Node.js 20 或更新版本的绝对路径运行 `runtime/packages/cli/dist/index.js`。记下这两个绝对路径。后文的 `leo-dev` 都指这一对，不要再换入口。
+
+目标仓库不是这棵插件源码树时，不要改跑源码树里的 `packages/cli/dist/index.js`，也不要联网安装同名命令。插件根没有 runtime，又不是带 `packages/cli/dist/index.js` 的源码树时，停下来说明缺控制器。只有开发这份源码、且插件根没有 runtime 包时，才可以使用该树的 `packages/cli/dist/index.js`，并记为 source-loaded，不能说已安装版本验证通过。
+
 ## 分流与开始
 
 1. 先读适用的 AGENTS.md、任务上下文、工作区与已有规格，保留脏工作区归属。

@@ -152,6 +152,39 @@ test('rejects runtime code or dependency replacement even when its manifest is r
   await assert.rejects(() => verify(output), /Runtime trusted inventory mismatch/);
 });
 
+test('packages a relocatable controller runtime in the open-agent plugin', async () => {
+  const dist = await temporaryDirectory('leo-dev-grok-runtime-dist-');
+  const isolatedParent = await temporaryDirectory('leo-dev-grok-runtime-isolated-');
+  const project = await temporaryDirectory('leo-dev-grok-runtime-project-');
+  const built = build(dist);
+  assert.equal(built.status, 0, built.stderr);
+
+  for (const platform of ['claude', 'cursor']) {
+    await assert.rejects(lstat(join(dist, platform, 'leo-dev', 'runtime')));
+  }
+
+  const packageRoot = join(dist, 'open-agent-plugin', 'leo-dev');
+  const entry = join(packageRoot, 'runtime/packages/cli/dist/index.js');
+  assert.equal((await lstat(join(packageRoot, 'runtime/runtime-manifest.json'))).isFile(), true);
+  assert.equal((await lstat(entry)).isFile(), true);
+
+  const { verify } = await import('../../scripts/verify-packages.mjs');
+  await assert.doesNotReject(() => verify(dist));
+
+  const relocated = join(isolatedParent, 'leo-dev');
+  await cp(packageRoot, relocated, { recursive: true, dereference: false });
+  await writeFile(join(project, 'spec.md'), '# Grok runtime package proof\n');
+  const relocatedEntry = join(relocated, 'runtime/packages/cli/dist/index.js');
+  const init = run(relocatedEntry, ['init', '--change', 'grok-runtime-proof', '--spec', 'spec.md'], project);
+  assert.equal(init.status, 0, `${init.stderr}\n${init.stdout}`);
+  const status = run(relocatedEntry, ['status', '--change', 'grok-runtime-proof'], project);
+  assert.equal(status.status, 0, `${status.stderr}\n${status.stdout}`);
+  assert.match(status.stdout, /grok-runtime-proof/);
+
+  await writeFile(entry, 'tampered');
+  await assert.rejects(() => verify(dist), /runtime|hash|inventory/i);
+});
+
 test('rejects injected runtime payloads in thin non-Codex packages', async () => {
   const output = await temporaryDirectory('leo-dev-thin-runtime-payload-');
   const { verify } = await import('../../scripts/verify-packages.mjs');

@@ -44,7 +44,7 @@ npm run build:adapters
 npm run verify:packages
 ```
 
-`dist/open-agent-plugin/leo-dev` is the Grok / Open Agent plugin (skill `develop` plus references). `dist/codex/leo-dev` is the Codex package (skill, selected upstream resources and the compiled controller). Install from those directories with the host's plugin command; see [installation](docs/installation.md). A skill file on disk is not the same check as a new host session loading it.
+`dist/open-agent-plugin/leo-dev` is the Grok / Open Agent plugin: skill `develop`, its references, and the compiled controller under `runtime/`. `dist/codex/leo-dev` is the Codex package (skill, selected upstream resources and the compiled controller). Install from those directories with the host's plugin command; see [installation](docs/installation.md). A skill file on disk is not the same check as a new host session loading it.
 
 The quality checks focus on design admission and the relevant recovery behavior. Required test failures and scoped lint errors fail the check; coverage is reporting-only while the first baseline is reviewed. CLI tests execute compiled child processes, so worker-process V8 coverage does not represent all behavior those tests exercise. Historical verification copies are excluded from test discovery.
 

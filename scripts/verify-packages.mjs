@@ -55,12 +55,15 @@ export async function verify(dist = join(root, 'dist')) {
     if (platform === 'codex' && (![manifest.interface.composerIcon, manifest.interface.logo].every((path) => path === `./${logo}` && validPath(path)))) fail('codex manifest artwork paths are invalid');
     const expected = new Set([`${manifestDirectory ? `${manifestDirectory}/` : ''}plugin.json`, ...releaseFiles, ...portableFiles.map((file) => `skills/develop/${file}`), ...(platform === 'codex' ? [...codexOnlyFiles.map((file) => `skills/develop/${file}`), ...codexReleaseFiles, logo] : [])]);
     const packageFiles = await files(packageRoot);
-    const expectedPackageFiles = platform === 'codex' ? packageFiles.filter((file) => !file.startsWith('runtime/')) : packageFiles;
+    const shipsRuntime = platform === 'codex' || platform === 'open-agent-plugin';
+    const expectedPackageFiles = shipsRuntime ? packageFiles.filter((file) => !file.startsWith('runtime/')) : packageFiles;
     if (!same(expectedPackageFiles, [...expected].sort())) fail(`${platform} package has unknown or missing files`);
     if (platform === 'codex') {
       if (await hash(join(packageRoot, logo)) !== await hash(join(root, logo))) fail('codex artwork hash mismatch');
       for (const file of codexReleaseFiles) if (await hash(join(packageRoot, file)) !== expectedReleaseHashes.get(file)) fail(`codex asset notice hash mismatch: ${file}`);
-      if (!packageFiles.includes(`runtime/${runtimeManifestName}`)) fail('codex runtime manifest is missing');
+    }
+    if (shipsRuntime) {
+      if (!packageFiles.includes(`runtime/${runtimeManifestName}`)) fail(`${platform} runtime manifest is missing`);
       await verifyRuntime(join(packageRoot, 'runtime'));
     }
     await validatePortableSkill(join(packageRoot, 'skills/develop'), { codexAgent: platform === 'codex' });

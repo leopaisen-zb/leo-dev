@@ -159,6 +159,15 @@ describe('develop portable operating contract', () => {
     expect(host).toContain('spawn_subagent');
   });
 
+  test('tells a loaded skill to run the packaged controller runtime', async () => {
+    const skill = await readFile(join(skillDirectory, 'SKILL.md'), 'utf8');
+    expect(skill).toContain('runtime/runtime-manifest.json');
+    expect(skill).toContain('runtime/packages/cli/dist/index.js');
+    expect(skill).toContain('不要改跑源码树里的 `packages/cli/dist/index.js`');
+    expect(skill).toContain('也不要联网安装同名命令');
+    expect(skill).toContain('source-loaded');
+  });
+
   test('has explicit bypass, approved-spec reuse, one-question discovery, and authority boundaries', async () => {
     const { skill, autonomy } = await loadDocuments();
     expect(skill).not.toContain('truly tiny unambiguous edits');

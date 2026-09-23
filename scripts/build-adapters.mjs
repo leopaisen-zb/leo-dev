@@ -144,8 +144,8 @@ export async function build({ output = join(root, 'dist') } = {}) {
         await mkdir(dirname(join(destination, logo)), { recursive: true });
         await cp(join(root, logo), join(destination, logo), { dereference: false, force: true });
         await copyFiles(root, destination, codexReleaseFiles);
-        await buildRuntime({ destination: join(destination, 'runtime') });
       }
+      if (platform === 'codex' || platform === 'open-agent-plugin') await buildRuntime({ destination: join(destination, 'runtime') });
     }
     for (const [platform] of adapters) await replaceOwnedPackage(join(staging, platform, metadata.name), join(output, platform, metadata.name));
   } finally { await rm(staging, { recursive: true, force: true }); }
