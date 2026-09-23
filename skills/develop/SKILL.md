@@ -13,6 +13,14 @@ description: 个人跨项目软件开发入口。用于开发功能、实现方�
 
 目标仓库不是这棵插件源码树时，不要改跑源码树里的 `packages/cli/dist/index.js`，也不要联网安装同名命令。插件根没有 runtime，又不是带 `packages/cli/dist/index.js` 的源码树时，停下来说明缺控制器。只有开发这份源码、且插件根没有 runtime 包时，才可以使用该树的 `packages/cli/dist/index.js`，并记为 source-loaded，不能说已安装版本验证通过。
 
+## 目标仓库的门槛
+
+默认 registry 是目标仓库里的 `core/gates/default.yaml`。没有这个文件时，`route` 和 `doctor` 停在 `PREREQUISITE_FAILED`，不要把门槛记成通过。先在这个仓库里找已经存在的检查命令，写成仓库内的 registry，再 `leo-dev route --registry <该文件>`。不要把别的仓库的 `npm run typecheck` 抄过来。找不到真实命令就停下来问人。
+
+## 领取和审查
+
+claim 之前规格和计划必须已经写好。`submit` 之后不要再改会被树哈希计算的路径，包括 `.scratch`。`leo-dev claim --session` 用实现者子代理的 session id。审查回执的 `sessionId` 用 `spawn_subagent` 返回的另一个 session id。
+
 ## 分流与开始
 
 1. 先读适用的 AGENTS.md、任务上下文、工作区与已有规格，保留脏工作区归属。

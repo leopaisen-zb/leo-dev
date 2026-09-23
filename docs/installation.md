@@ -1,3 +1,25 @@
+# Install on Grok
+
+Phase-1 host is Grok Build. Build from a checkout with Node.js 22 and npm. The packaged controller still requires Node.js 20 or newer.
+
+```sh
+npm ci
+npm run build
+npm run build:adapters
+```
+
+`dist/open-agent-plugin/leo-dev` is the Grok plugin: the `develop` skill, its references, and the compiled controller under `runtime/`. Install that directory. The commands below use the local plugin path; `dist/` is not committed, so rebuild before installing.
+
+```sh
+grok plugin uninstall leo-dev --confirm
+grok plugin install /absolute/path/to/dist/open-agent-plugin/leo-dev --trust
+grok plugin enable leo-dev
+```
+
+Start a new Grok session in the repository you want to change, then invoke `$develop`. The installed plugin must contain `runtime/runtime-manifest.json` and `runtime/packages/cli/dist/index.js`. A package built before that runtime existed has the skill only. Finding the skill on disk does not prove a new session loaded it.
+
+The controller reads the target repository's gate registry. It does not treat this repository's `npm run typecheck` as the target's check. If the target has no registry, name a command that repository already runs.
+
 # Install in Codex
 
 Build from a checkout of the public repository using Node.js 22 and npm. The packaged controller retains its Node.js 20-or-newer runtime requirement. The recorded release host and CI use macOS; the controller's network-deny Gate policy requires an enforceable host sandbox. A Linux or Windows source build alone does not establish that capability.

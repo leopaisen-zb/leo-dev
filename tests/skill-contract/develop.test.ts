@@ -159,6 +159,27 @@ describe('develop portable operating contract', () => {
     expect(host).toContain('spawn_subagent');
   });
 
+  test('tells a loaded skill how to gate another repository and separate review', async () => {
+    const skill = await readFile(join(skillDirectory, 'SKILL.md'), 'utf8');
+    expect(skill).toContain('core/gates/default.yaml');
+    expect(skill).toContain('PREREQUISITE_FAILED');
+    expect(skill).toContain('不要把别的仓库的 `npm run typecheck` 抄过来');
+    expect(skill).toContain('找不到真实命令就停下来问人');
+    expect(skill).toContain('不要把门槛记成通过');
+    expect(skill).toContain('claim 之前规格和计划必须已经写好');
+    expect(skill).toContain('不要再改会被树哈希计算的路径，包括 `.scratch`');
+    expect(skill).toContain('`leo-dev claim --session` 用实现者子代理的 session id');
+    expect(skill).toContain('审查回执的 `sessionId` 用 `spawn_subagent` 返回的另一个 session id');
+    const gates = await readFile(join(skillDirectory, 'references/gates.md'), 'utf8');
+    expect(gates).toContain('不要把别的仓库的 `npm run typecheck` 抄过来');
+    const lifecycle = await readFile(join(skillDirectory, 'references/lifecycle.md'), 'utf8');
+    expect(lifecycle).toContain('没有真实命令就停下来问人');
+    const installation = await readFile(join(root, 'docs/installation.md'), 'utf8');
+    expect(installation.startsWith('# Install on Grok')).toBe(true);
+    expect(installation).toContain('dist/open-agent-plugin/leo-dev');
+    expect(installation).toContain('# Install in Codex');
+  });
+
   test('tells a loaded skill to run the packaged controller runtime', async () => {
     const skill = await readFile(join(skillDirectory, 'SKILL.md'), 'utf8');
     expect(skill).toContain('runtime/runtime-manifest.json');

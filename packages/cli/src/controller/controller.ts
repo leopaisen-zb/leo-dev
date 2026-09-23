@@ -526,6 +526,26 @@ function mapKnownError(error: unknown): ControllerError {
   return new ControllerError(9, 'INTERNAL_ERROR', message || 'Unexpected controller failure');
 }
 
+function gateRegistryRelative(options: CommandOptions): string {
+  return typeof options.registry === 'string' && options.registry.trim() ? options.registry : 'core/gates/default.yaml';
+}
+
+function missingGateRegistryMessage(relativePath: string): string {
+  return `This repository has no gate registry at ${relativePath}. Point --registry at a file in this repository whose argv is a command the repository already runs. Do not copy npm run typecheck from another project, and do not record a gate as passed.`;
+}
+
+async function openGateRegistry(repositoryRoot: string, options: CommandOptions): Promise<{ registry: GateRegistry; registryPath: string }> {
+  const relativePath = gateRegistryRelative(options);
+  const registryPath = resolve(repositoryRoot, relativePath);
+  await assertContained(repositoryRoot, registryPath);
+  try {
+    return { registry: await GateRegistry.fromYaml(registryPath), registryPath };
+  } catch (error: unknown) {
+    if (['ENOENT', 'ENOTDIR'].includes(String(record(error).code))) throw new ControllerError(8, 'PREREQUISITE_FAILED', missingGateRegistryMessage(relativePath));
+    throw error;
+  }
+}
+
 export class Controller {
   async execute(command: string, options: CommandOptions): Promise<CommandResult> {
     try {
@@ -700,9 +720,7 @@ export class Controller {
         const routeTaskId = stringOption(options, 'task', false);
         const gateId = stringOption(options, 'gate', false);
         if (planReference ? routeTaskId !== undefined || gateId !== undefined : routeTaskId === undefined || gateId === undefined) throw new ControllerError(2, 'VALIDATION_ERROR', 'Route requires either --plan or the legacy --task with --gate');
-        const registryPath = resolve(repositoryRoot, typeof options.registry === 'string' ? options.registry : 'core/gates/default.yaml');
-        await assertContained(repositoryRoot, registryPath);
-        const registry = await GateRegistry.fromYaml(registryPath);
+        const { registry, registryPath } = await openGateRegistry(repositoryRoot, options);
         if (lifecycle.changeState !== 'triage') throw new ControllerError(3, 'TRANSITION_FORBIDDEN', 'Routing is only available from triage', lifecycle);
         if (latestPayload<Routed>(events, 'route.selected')) throw new ControllerError(5, 'CONFLICT', 'This change is already routed', lifecycle);
         if (planReference) {
@@ -2178,9 +2196,7 @@ export class Controller {
       try { await assertContained(repositoryRoot, planPath); } catch { throw new ControllerError(2, 'VALIDATION_ERROR', `Plan path escapes repository: ${planPath}`); }
       tasks = validatePlanTasks(await loadYaml(planPath));
     }
-    const registryPath = resolve(repositoryRoot, typeof options.registry === 'string' ? options.registry : 'core/gates/default.yaml');
-    await assertContained(repositoryRoot, registryPath);
-    const registry = await GateRegistry.fromYaml(registryPath);
+    const { registry, registryPath } = await openGateRegistry(repositoryRoot, options);
     if (tasks) for (const task of tasks) registry.get(task.gateIds[0]!);
     const governance = await this.governanceAdmission(repositoryRoot, changeId, tasks ? planAssessmentTaskId(tasks) : taskId!, options, events);
     if (!governance.recorded && governance.previous) {
@@ -3476,13 +3492,15 @@ export class Controller {
     checks.push({ name: 'node', ok: major >= 20, detail: `observed ${process.version}; requires >=20` });
     try { await loadSchema('change'); checks.push({ name: 'schemas', ok: true, detail: `loaded from ${relative(moduleRepositoryRoot, join(moduleRepositoryRoot, 'schemas')) || 'schemas'}` }); }
     catch (error: unknown) { checks.push({ name: 'schemas', ok: false, detail: error instanceof Error ? error.message : String(error) }); }
-    const registryPath = resolve(repositoryRoot, typeof options.registry === 'string' ? options.registry : 'core/gates/default.yaml');
-    try { await GateRegistry.fromYaml(registryPath); checks.push({ name: 'gate-registry', ok: true, detail: registryPath }); }
-    catch (error: unknown) { checks.push({ name: 'gate-registry', ok: false, detail: error instanceof Error ? error.message : String(error) }); }
+    try {
+      const opened = await openGateRegistry(repositoryRoot, options);
+      checks.push({ name: 'gate-registry', ok: true, detail: opened.registryPath });
+    } catch (error: unknown) { checks.push({ name: 'gate-registry', ok: false, detail: error instanceof Error ? error.message : String(error) }); }
     checks.push({ name: 'client-loading', ok: null, detail: 'not run: real Claude/Cursor/Codex client loading was not exercised' });
     checks.push({ name: 'node20-runtime', ok: major === 20 ? true : null, detail: major === 20 ? 'observed Node 20' : `not run: Node 20 runtime was not executed (host ${process.version}); compatibility is static/package-contract evidence` });
     const ok = checks.filter((check) => ['node', 'schemas', 'gate-registry'].includes(check.name)).every((check) => check.ok === true);
-    if (!ok) throw new ControllerError(8, 'PREREQUISITE_FAILED', 'One or more required local prerequisites failed', { checks, hostNode: process.version });
+    const missingRegistry = checks.find((check) => check.name === 'gate-registry' && check.ok === false);
+    if (!ok) throw new ControllerError(8, 'PREREQUISITE_FAILED', missingRegistry ? missingRegistry.detail : 'One or more required local prerequisites failed', { checks, hostNode: process.version });
     return result('DOCTOR_OK', { checks, hostNode: process.version, requiredNode: '>=20', realClientLoadingTested: false, node20RuntimeTested: major === 20 });
   }
 }
