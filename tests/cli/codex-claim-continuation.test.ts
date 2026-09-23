@@ -90,7 +90,7 @@ async function freshDesignReceipt(root: string, changeId: string, design: Record
   });
 }
 
-async function approveAndDesign(root: string, changeId: string, expiresAt: string): Promise<Record<string, any>> {
+async function approveAndDesign(root: string, changeId: string, expiresInMs: number): Promise<Record<string, any>> {
   expectExit(cli(root, 'init', '--change', changeId, '--spec', 'spec.md'), 0, 'INITIALIZED');
   expectExit(cli(root, 'route', '--change', changeId, '--plan', 'plan.json'), 0, 'ROUTED_STANDARD');
   for (const state of ['discovery', 'spec-review']) expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', state), 0, 'TRANSITIONED');
@@ -99,9 +99,10 @@ async function approveAndDesign(root: string, changeId: string, expiresAt: strin
   expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'spec-approved'), 0, 'TRANSITIONED');
   expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'design-review', '--design', 'design.md', '--session', 'design-producer'), 0, 'TRANSITIONED');
   const design = cli(root, 'status', '--change', changeId).envelope.state!.designReviewContext;
+  const expiresAt = new Date(Date.now() + expiresInMs).toISOString();
   expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', 'design-approved', '--receipt', await receipt(root, `design-${randomUUID()}.json`, { receiptId: `design-${randomUUID()}`, provenance: 'platform-attested', actorLabel: 'independent fixture reviewer', sessionId: 'design-reviewer', verdict: 'pass', findingsHash: hash('none'), timestamp: new Date().toISOString(), expiresAt, changeId, specHash: design.specHash, planHash: design.planHash, designHash: design.designHash, producerSession: design.producerSession })), 0, 'TRANSITIONED');
   for (const state of ['task-ready', 'executing']) expectExit(cli(root, 'transition', '--change', changeId, '--scope', 'change', '--to', state), 0, 'TRANSITIONED');
-  return design;
+  return { ...design, expiresAt };
 }
 
 afterEach(async () => { await Promise.all(temporary.splice(0).map((path) => rm(path, { recursive: true, force: true }))); });
@@ -110,7 +111,7 @@ afterEach(async () => { await Promise.all(temporary.splice(0).map((path) => rm(p
 // or replacing it before validating its dirty allowed-path source.
 test('public claim supersedes only the explicit expired pre-Gate Run while retaining allowed dirty source', async () => {
   const root = await fixture(); const changeId = 'expired-pre-gate';
-  await approveAndDesign(root, changeId, new Date(Date.now() + 60_000).toISOString());
+  await approveAndDesign(root, changeId, 60_000);
   const old = cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--session', 'old-producer', '--ttl', '1'); expectExit(old, 0, 'CLAIMED');
   const oldRun = old.envelope.state!.run.runId as string;
   await writeFile(join(root, 'src/app.ts'), 'export const version = 2;\n');
@@ -126,7 +127,7 @@ test('public claim supersedes only the explicit expired pre-Gate Run while retai
 // it before ordinary claim admission succeeds.
 test('public claim atomically ingests a fresh same-binding independent design receipt after expiry', async () => {
   const root = await fixture(); const changeId = 'fresh-design-on-claim';
-  const design = await approveAndDesign(root, changeId, new Date(Date.now() + 10_000).toISOString());
+  const design = await approveAndDesign(root, changeId, 10_000);
   await new Promise((resolveDelay) => setTimeout(resolveDelay, 10_050));
   expectExit(cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--session', 'ordinary-producer'), 5, 'CONFLICT');
   const fresh = await receipt(root, 'fresh-design-receipt.json', { receiptId: `fresh-design-${randomUUID()}`, provenance: 'platform-attested', actorLabel: 'new independent reviewer', sessionId: 'fresh-design-reviewer', verdict: 'pass', findingsHash: hash('fresh review'), timestamp: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(), changeId, specHash: design.specHash, planHash: design.planHash, designHash: design.designHash, producerSession: design.producerSession });
@@ -139,7 +140,7 @@ test('public claim atomically ingests a fresh same-binding independent design re
 // drifted, or failing to make the valid prepared batch resumable through public CLI.
 test('public resume repairs a prepared continuation only while its captured source remains exact', async () => {
   const root = await fixture(); const changeId = 'continuation-recovery';
-  await approveAndDesign(root, changeId, new Date(Date.now() + 60_000).toISOString());
+  await approveAndDesign(root, changeId, 60_000);
   const old = cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--session', 'old-producer', '--ttl', '1'); expectExit(old, 0, 'CLAIMED');
   await writeFile(join(root, 'src/app.ts'), 'export const version = 2;\n'); await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
   await expect(new Controller().execute('claim', { repo: root, change: changeId, task: 'implementation', supersede: old.envelope.state!.run.runId, session: 'fresh-producer', faultAt: 'after-batch-prepared' })).rejects.toThrow('Simulated crash');
@@ -147,7 +148,7 @@ test('public resume repairs a prepared continuation only while its captured sour
   expect(cli(root, 'status', '--change', changeId).envelope.state).toMatchObject({ tasks: { implementation: { state: 'implementing' } }, attempts: { implementation: { consumed: 0 } } });
 
   const driftingRoot = await fixture(); const driftingChange = 'continuation-source-drift';
-  await approveAndDesign(driftingRoot, driftingChange, new Date(Date.now() + 60_000).toISOString());
+  await approveAndDesign(driftingRoot, driftingChange, 60_000);
   const driftingOld = cli(driftingRoot, 'claim', '--change', driftingChange, '--task', 'implementation', '--session', 'old-producer', '--ttl', '1'); expectExit(driftingOld, 0, 'CLAIMED');
   await writeFile(join(driftingRoot, 'src/app.ts'), 'export const version = 2;\n'); await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
   await expect(new Controller().execute('claim', { repo: driftingRoot, change: driftingChange, task: 'implementation', supersede: driftingOld.envelope.state!.run.runId, session: 'fresh-producer', faultAt: 'after-batch-prepared' })).rejects.toThrow('Simulated crash');
@@ -159,7 +160,7 @@ test('public resume repairs a prepared continuation only while its captured sour
 
 test('public continuation dry-run and admission refusals never write source, journal, snapshot, or fresh receipt', async () => {
   const root = await fixture(); const changeId = 'continuation-dry-run-fences';
-  const design = await approveAndDesign(root, changeId, new Date(Date.now() + 60_000).toISOString());
+  const design = await approveAndDesign(root, changeId, 60_000);
   const old = cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--session', 'old-producer', '--ttl', '80'); expectExit(old, 0, 'CLAIMED');
   const oldRun = old.envelope.state!.run.runId as string;
   await writeFile(join(root, 'src/app.ts'), 'export const version = 2;\n');
@@ -175,13 +176,13 @@ test('public continuation dry-run and admission refusals never write source, jou
   await unchangedAfterRefusal(root, changeId, () => cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--supersede', oldRun));
 
   const protectedRoot = await fixture(); const protectedChange = 'continuation-protected-drift';
-  await approveAndDesign(protectedRoot, protectedChange, new Date(Date.now() + 60_000).toISOString());
+  await approveAndDesign(protectedRoot, protectedChange, 60_000);
   const protectedOld = cli(protectedRoot, 'claim', '--change', protectedChange, '--task', 'implementation', '--session', 'old-producer', '--ttl', '80'); expectExit(protectedOld, 0, 'CLAIMED');
   await writeFile(join(protectedRoot, 'spec.md'), '# protected drift\n'); await waitUntilExpired(protectedOld.envelope.state!.run.lease.expiresAt as string);
   await unchangedAfterRefusal(protectedRoot, protectedChange, () => cli(protectedRoot, 'claim', '--change', protectedChange, '--task', 'implementation', '--supersede', protectedOld.envelope.state!.run.runId, '--session', 'fresh-producer'));
 
   const outcomeRoot = await fixture(); const outcomeChange = 'continuation-outcome-fence';
-  await approveAndDesign(outcomeRoot, outcomeChange, new Date(Date.now() + 60_000).toISOString());
+  await approveAndDesign(outcomeRoot, outcomeChange, 60_000);
   const outcomeOld = cli(outcomeRoot, 'claim', '--change', outcomeChange, '--task', 'implementation', '--session', 'old-producer', '--ttl', '1000'); expectExit(outcomeOld, 0, 'CLAIMED');
   expectExit(cli(outcomeRoot, 'run-gates', '--change', outcomeChange, '--task', 'implementation', '--run', outcomeOld.envelope.state!.run.runId), 0, 'GATES_PASSED');
   await waitUntilExpired(outcomeOld.envelope.state!.run.lease.expiresAt as string);
@@ -190,9 +191,8 @@ test('public continuation dry-run and admission refusals never write source, jou
 
 test('fresh design receipts are independent, current, unconsumed claim inputs and successful continuation preserves their bytes', async () => {
   const root = await fixture(); const changeId = 'continuation-fresh-receipt-fences';
-  const originalExpiry = new Date(Date.now() + 15_000).toISOString();
-  const design = await approveAndDesign(root, changeId, originalExpiry);
-  await waitUntilExpired(originalExpiry);
+  const design = await approveAndDesign(root, changeId, 15_000);
+  await waitUntilExpired(design.expiresAt);
   const dryReceipt = await freshDesignReceipt(root, changeId, design, 'ordinary-dry-run.json');
   const dryPaths = runtimePaths(root, changeId); const dryJournal = await readFile(dryPaths.journal, 'utf8'); const drySnapshot = await readFile(dryPaths.snapshot, 'utf8'); const dryBytes = await readFile(dryReceipt, 'utf8');
   expectExit(cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--session', 'ordinary-producer', '--design-review-receipt', dryReceipt, '--dry-run'), 0, 'DRY_RUN');
@@ -212,7 +212,7 @@ test('fresh design receipts are independent, current, unconsumed claim inputs an
 // receipt's repository containment changes the public refusal precedence.
 test('fresh claim validates an escaping receipt path before a drifted design source', async () => {
   const root = await fixture(); const changeId = 'fresh-receipt-path-precedence';
-  await approveAndDesign(root, changeId, new Date(Date.now() + 60_000).toISOString());
+  await approveAndDesign(root, changeId, 60_000);
   const escaped = join(dirname(root), `leo-dev-escaped-${randomUUID()}.json`); temporary.push(escaped);
   await writeFile(escaped, JSON.stringify({ shadow: 'outside repository' }));
   await writeFile(join(root, 'design.md'), '# Drifted after review\n');
@@ -223,7 +223,7 @@ test('fresh claim validates an escaping receipt path before a drifted design sou
 
 test('continuation retains consumed failures and later claims stay remediation', async () => {
   const root = await fixture(); const changeId = 'continuation-remediation-history';
-  await approveAndDesign(root, changeId, new Date(Date.now() + 60_000).toISOString());
+  await approveAndDesign(root, changeId, 60_000);
   for (const n of [1, 2, 3]) {
     const claim = cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--session', `producer-${n}`); expectExit(claim, 0, 'CLAIMED');
     expectExit(cli(root, 'run-gates', '--change', changeId, '--task', 'implementation', '--run', claim.envelope.state!.run.runId), 0, 'GATES_PASSED');
@@ -251,12 +251,12 @@ test('continuation retains consumed failures and later claims stay remediation',
 
 test('unexpired and out-of-allowed-path continuation admissions refuse without writing', async () => {
   const unexpiredRoot = await fixture(); const unexpiredChange = 'continuation-unexpired';
-  await approveAndDesign(unexpiredRoot, unexpiredChange, new Date(Date.now() + 60_000).toISOString());
+  await approveAndDesign(unexpiredRoot, unexpiredChange, 60_000);
   const unexpired = cli(unexpiredRoot, 'claim', '--change', unexpiredChange, '--task', 'implementation', '--session', 'old-producer', '--ttl', '5000'); expectExit(unexpired, 0, 'CLAIMED');
   await unchangedAfterRefusal(unexpiredRoot, unexpiredChange, () => cli(unexpiredRoot, 'claim', '--change', unexpiredChange, '--task', 'implementation', '--supersede', unexpired.envelope.state!.run.runId, '--session', 'fresh-producer'));
 
   const outsideRoot = await fixture(); const outsideChange = 'continuation-outside-path';
-  await approveAndDesign(outsideRoot, outsideChange, new Date(Date.now() + 60_000).toISOString());
+  await approveAndDesign(outsideRoot, outsideChange, 60_000);
   const outside = cli(outsideRoot, 'claim', '--change', outsideChange, '--task', 'implementation', '--session', 'old-producer', '--ttl', '100'); expectExit(outside, 0, 'CLAIMED');
   await writeFile(join(outsideRoot, 'outside.ts'), 'export const outside = true;\n'); await waitUntilExpired(outside.envelope.state!.run.lease.expiresAt as string);
   await unchangedAfterRefusal(outsideRoot, outsideChange, () => cli(outsideRoot, 'claim', '--change', outsideChange, '--task', 'implementation', '--supersede', outside.envelope.state!.run.runId, '--session', 'fresh-producer'));
@@ -264,7 +264,7 @@ test('unexpired and out-of-allowed-path continuation admissions refuse without w
 
 test('two real concurrent supersede CLIs elect one replacement and the winner completes through public Gate, submit, and review', async () => {
   const root = await fixture(); const changeId = 'continuation-concurrent';
-  await approveAndDesign(root, changeId, new Date(Date.now() + 60_000).toISOString());
+  await approveAndDesign(root, changeId, 60_000);
   const old = cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--session', 'old-producer', '--ttl', '100'); expectExit(old, 0, 'CLAIMED');
   const oldRun = old.envelope.state!.run.runId as string; await writeFile(join(root, 'src/app.ts'), 'export const version = 2;\n'); await waitUntilExpired(old.envelope.state!.run.lease.expiresAt as string);
   const [first, second] = await Promise.all([
@@ -286,7 +286,7 @@ test('two real concurrent supersede CLIs elect one replacement and the winner co
 
 test('prepared supersession with a fresh receipt refuses receipt drift and incomplete journal tail before repair', async () => {
   const root = await fixture(); const changeId = 'continuation-pending-receipt-tail';
-  const design = await approveAndDesign(root, changeId, new Date(Date.now() + 60_000).toISOString());
+  const design = await approveAndDesign(root, changeId, 60_000);
   const old = cli(root, 'claim', '--change', changeId, '--task', 'implementation', '--session', 'old-producer', '--ttl', '100'); expectExit(old, 0, 'CLAIMED');
   await writeFile(join(root, 'src/app.ts'), 'export const version = 2;\n'); await waitUntilExpired(old.envelope.state!.run.lease.expiresAt as string);
   const fresh = await freshDesignReceipt(root, changeId, design, 'pending-fresh.json');

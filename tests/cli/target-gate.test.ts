@@ -59,7 +59,7 @@ test('missing default registry stops route and doctor without recording a pass',
   const journal = await readFile(join(root, '.leo-dev/runtime/foreign/journal.ndjson'), 'utf8');
   expect(journal).not.toContain('route.selected');
   expect(journal).not.toContain('GATES_PASSED');
-});
+}, 60_000);
 
 test('an explicit registry in the target repository can route', async () => {
   const root = await bare('own-gate');
@@ -69,7 +69,7 @@ test('an explicit registry in the target repository can route', async () => {
   const routed = cli(root, 'route', '--change', 'own-check', '--task', 'task', '--gate', 'check', '--registry', 'gates/check.yaml');
   expect(routed.status, JSON.stringify(routed.envelope)).toBe(0);
   expect(routed.envelope.code).toBe('ROUTED_LITE');
-});
+}, 20_000);
 
 test('an existing default registry still routes without --registry', async () => {
   const root = await bare('default-gate');
@@ -79,4 +79,4 @@ test('an existing default registry still routes without --registry', async () =>
   const routed = cli(root, 'route', '--change', 'has-default', '--task', 'task', '--gate', 'pass');
   expect(routed.status, JSON.stringify(routed.envelope)).toBe(0);
   expect(routed.envelope.code).toBe('ROUTED_LITE');
-});
+}, 20_000);

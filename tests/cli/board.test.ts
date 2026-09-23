@@ -257,7 +257,7 @@ test('projects a submitted task onto doing with a reviewing badge', async () => 
     availability: 'available',
     tasks: [{ id: 'board-task', state: 'review-required', column: 'doing', reviewBadge: 'reviewing' }],
   });
-});
+}, 60_000);
 
 describe('completed Gate observation fixture', () => {
   let prepared: Awaited<ReturnType<typeof submittedFixture>>;

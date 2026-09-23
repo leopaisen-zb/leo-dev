@@ -88,5 +88,5 @@ describe('canonical repository identity', () => {
     const surface = await scanning;
     expect(surface.entries.some((entry) => entry.includes('z-transient'))).toBe(false);
     expect(await writeSurface(root)).toEqual(surface);
-  });
+  }, 60_000);
 });

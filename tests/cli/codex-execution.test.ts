@@ -140,7 +140,7 @@ test('synthetic ordinary claim without session still follows lease rules after a
   expectExit(cli(root, 'claim', '--change', 'missing-session', '--task', 'task', '--dry-run'), 5, 'CONFLICT');
 }, 60_000);
 
-test('synthetic reconciled failed unknown attempts release their lease and keep remediating without a findings hash', async () => {
+test('synthetic reconciled failed unknown attempts block the second hashless failure', async () => {
   const root = await fixture(); await executingMissing(root, 'unknown-budget');
   expectExit(cli(root, 'claim', '--change', 'unknown-budget', '--task', 'task', '--session', 'u1'), 0, 'CLAIMED');
   expectExit(await runMissingGate(root, 'unknown-budget'), 7, 'BLOCKED');
@@ -149,8 +149,8 @@ test('synthetic reconciled failed unknown attempts release their lease and keep 
   expectExit(cli(root, 'claim', '--change', 'unknown-budget', '--task', 'task', '--session', 'u2'), 0, 'CLAIMED');
   expectExit(await runMissingGate(root, 'unknown-budget'), 7, 'BLOCKED');
   const second = await reconcileFailed(root, 'unknown-budget');
-  expect(second.state).toMatchObject({ changeState: 'executing', tasks: { task: { state: 'remediation' } }, leases: { task: { active: false } }, attempts: { task: { consumed: 2, nextKind: 'remediation' } } });
-  expectExit(cli(root, 'claim', '--change', 'unknown-budget', '--task', 'task', '--session', 'u3'), 0, 'CLAIMED');
+  expect(second.state).toMatchObject({ changeState: 'blocked', tasks: { task: { state: 'blocked' } }, leases: { task: { active: false } }, attempts: { task: { consumed: 2, nextKind: 'blocked' } } });
+  expect(second.state.blockers.join(' ')).toContain('no-progress');
 }, 90_000);
 
 test.each([

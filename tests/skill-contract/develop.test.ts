@@ -155,38 +155,38 @@ describe('develop portable operating contract', () => {
 
   test('tells Grok to spawn an independent reviewer subagent', async () => {
     const host = await readFile(join(skillDirectory, 'references/host-subagents.md'), 'utf8');
-    expect(host).toContain('Grok Build');
-    expect(host).toContain('spawn_subagent');
+    expect(host).toContain('在 Grok Build 用 `spawn_subagent` 拉独立子代理。子代理的 session id 写入审查 receipt 的 `sessionId`。');
+    expect(host).toContain('实现者的 session id 写入 `leo-dev claim --session`。审查 session 不得等于实现者 claim session。');
+    expect(host).not.toContain('不要用 `spawn_subagent`');
   });
 
   test('tells a loaded skill how to gate another repository and separate review', async () => {
     const skill = await readFile(join(skillDirectory, 'SKILL.md'), 'utf8');
-    expect(skill).toContain('core/gates/default.yaml');
-    expect(skill).toContain('PREREQUISITE_FAILED');
-    expect(skill).toContain('不要把别的仓库的 `npm run typecheck` 抄过来');
-    expect(skill).toContain('找不到真实命令就停下来问人');
-    expect(skill).toContain('不要把门槛记成通过');
-    expect(skill).toContain('claim 之前规格和计划必须已经写好');
-    expect(skill).toContain('不要再改会被树哈希计算的路径，包括 `.scratch`');
-    expect(skill).toContain('`leo-dev claim --session` 用实现者子代理的 session id');
-    expect(skill).toContain('审查回执的 `sessionId` 用 `spawn_subagent` 返回的另一个 session id');
+    expect(skill).toContain('没有这个文件时，`route` 和 `doctor` 停在 `PREREQUISITE_FAILED`，不要把门槛记成通过。');
+    expect(skill).toContain('先在这个仓库里找已经存在的检查命令，写成仓库内的 registry，再 `leo-dev route --registry <该文件>`。');
+    expect(skill).toContain('不要把别的仓库的 `npm run typecheck` 抄过来。找不到真实命令就停下来问人。');
+    expect(skill).toContain('claim 之前规格和计划必须已经写好。');
+    expect(skill).toContain('`submit` 之后不要再改会被树哈希计算的路径，包括 `.scratch`。');
+    expect(skill).toContain('`leo-dev claim --session` 用实现者子代理的 session id。审查回执的 `sessionId` 用 `spawn_subagent` 返回的另一个 session id。');
     const gates = await readFile(join(skillDirectory, 'references/gates.md'), 'utf8');
-    expect(gates).toContain('不要把别的仓库的 `npm run typecheck` 抄过来');
+    expect(gates).toContain('用 `leo-dev route --registry <该文件>`。找不到就停下来问人。');
     const lifecycle = await readFile(join(skillDirectory, 'references/lifecycle.md'), 'utf8');
-    expect(lifecycle).toContain('没有真实命令就停下来问人');
+    expect(lifecycle).toContain('用 `--registry` 指向这个仓库里已有命令的 registry，没有真实命令就停下来问人。');
     const installation = await readFile(join(root, 'docs/installation.md'), 'utf8');
     expect(installation.startsWith('# Install on Grok')).toBe(true);
-    expect(installation).toContain('dist/open-agent-plugin/leo-dev');
+    expect(installation).toContain('grok plugin install /absolute/path/to/dist/open-agent-plugin/leo-dev --trust');
+    expect(installation).toContain('The installed plugin must contain `runtime/runtime-manifest.json` and `runtime/packages/cli/dist/index.js`.');
+    expect(installation).toContain("It does not treat this repository's `npm run typecheck` as the target's check.");
     expect(installation).toContain('# Install in Codex');
   });
 
   test('tells a loaded skill to run the packaged controller runtime', async () => {
     const skill = await readFile(join(skillDirectory, 'SKILL.md'), 'utf8');
-    expect(skill).toContain('runtime/runtime-manifest.json');
-    expect(skill).toContain('runtime/packages/cli/dist/index.js');
-    expect(skill).toContain('不要改跑源码树里的 `packages/cli/dist/index.js`');
-    expect(skill).toContain('也不要联网安装同名命令');
-    expect(skill).toContain('source-loaded');
+    expect(skill).toContain('插件根里有 `runtime/runtime-manifest.json` 时，用本机 Node.js 20 或更新版本的绝对路径运行 `runtime/packages/cli/dist/index.js`。');
+    expect(skill).toContain('目标仓库不是这棵插件源码树时，不要改跑源码树里的 `packages/cli/dist/index.js`，也不要联网安装同名命令。');
+    expect(skill).toContain('插件根没有 runtime，又不是带 `packages/cli/dist/index.js` 的源码树时，停下来说明缺控制器。');
+    expect(skill).toContain('并记为 source-loaded，不能说已安装版本验证通过。');
+    expect(skill).not.toContain('不要运行 `runtime/packages/cli/dist/index.js`');
   });
 
   test('has explicit bypass, approved-spec reuse, one-question discovery, and authority boundaries', async () => {
